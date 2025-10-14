@@ -1,0 +1,97 @@
+# Render.com Deployment Configuration
+# UPSC Current Affairs FastAPI Backend
+# Optimized for: Free tier, daily 6 PM execution, minimal costs
+
+services:
+  # FastAPI Backend Service
+  - type: web
+    name: upsc-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: ./
+
+    # Service configuration
+    plan: free  # Render free tier
+    region: singapore  # Closest to India for better performance
+
+    # Health check configuration
+    healthCheckPath: /api/health
+
+    # Auto-deploy on push to main branch
+    branch: main
+
+    # Environment variables (sensitive values set in Render dashboard)
+    envVars:
+      # Application environment
+      - key: ENVIRONMENT
+        value: production
+
+      # API documentation (disabled in production)
+      - key: API_DOCS_ENABLED
+        value: false
+
+      # Logging configuration
+      - key: LOG_LEVEL
+        value: INFO
+
+      # Performance settings optimized for free tier
+      - key: MAX_ARTICLES_PER_SOURCE
+        value: 50
+
+      - key: MIN_UPSC_RELEVANCE
+        value: 40
+
+      - key: CACHE_TTL_MINUTES
+        value: 15
+
+      # CORS origins (add your frontend domain)
+      - key: CORS_ORIGINS
+        value: '["http://localhost:3000","https://upsc-kappa.vercel.app"]'
+
+      # Port configuration (Render auto-assigns)
+      - key: PORT
+        value: 8000
+
+      # =================================================================
+      # SENSITIVE ENVIRONMENT VARIABLES - SET IN RENDER DASHBOARD
+      # =================================================================
+      # Navigate to: Dashboard > Service > Environment > Add Environment Variable
+      #
+      # Required variables:
+      # 1. FASTAPI_API_KEY - Backend authentication key
+      # 2. SUPABASE_URL - Your Supabase project URL
+      # 3. SUPABASE_SERVICE_ROLE_KEY - Supabase service role key
+      # 4. GEMINI_API_KEY - Google Gemini API key (primary)
+      # 5. GEMINI_API_KEY_2 through GEMINI_API_KEY_22 - Additional keys (optional)
+      # 6. GROQ_API_KEY - Groq API key (primary, optional)
+      # 7. GROQ_API_KEY_2 through GROQ_API_KEY_29 - Additional Groq keys (optional)
+      # =================================================================
+
+      # Placeholder entries (values set via Render dashboard)
+      - key: FASTAPI_API_KEY
+        sync: false  # Don't sync from repo (set manually in dashboard)
+
+      - key: SUPABASE_URL
+        sync: false
+
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: GROQ_API_KEY
+        sync: false
+
+    # Build configuration
+    buildCommand: echo "Using Docker build from Dockerfile.render"
+
+    # Auto-scaling configuration (free tier limits)
+    autoDeploy: true
+
+    # Render free tier specifics
+    # - Service sleeps after 15 minutes of inactivity
+    # - 750 hours/month free (sufficient for daily 6 PM runs)
+    # - 512MB RAM, shared CPU
+    # - Cold start: ~30-60 seconds
+

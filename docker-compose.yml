@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  fastapi-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: upsc-fastapi-backend:latest
+    container_name: upsc-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Essential environment variables
+      ENVIRONMENT: production
+      API_DOCS_ENABLED: "false"
+      LOG_LEVEL: INFO
+      
+      # Performance optimizations
+      MAX_ARTICLES_PER_SOURCE: 50
+      MIN_UPSC_RELEVANCE: 40
+      CACHE_TTL_MINUTES: 15
+      
+      # CORS configuration
+      CORS_ORIGINS: '["http://localhost:3000", "https://your-frontend-domain.com"]'
+      
+      # Required secrets (set via .env file or external configuration)
+      # API_KEY: ${API_KEY}
+      # SUPABASE_URL: ${SUPABASE_URL}
+      # SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      # GEMINI_API_KEY: ${GEMINI_API_KEY}
+      
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
+    # Resource limits for production deployment
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    
+    # Volume for persistent data (optional)
+    volumes:
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+    
+    # Network configuration
+    networks:
+      - upsc-network
+
+networks:
+  upsc-network:
+    driver: bridge
+
+# Optional: Add Redis for enhanced caching (future enhancement)
+# redis:
+#   image: redis:7-alpine
+#   container_name: upsc-redis
+#   ports:
+#     - "6379:6379"
+#   restart: unless-stopped
+#   networks:
+#     - upsc-network

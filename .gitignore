@@ -1,0 +1,138 @@
+# ============================================
+# ENVIRONMENT VARIABLES (NEVER COMMIT!)
+# ============================================
+.env
+.env.local
+.env.production
+.env.development
+*.env
+!.env.example
+!.env.template
+
+# ============================================
+# PYTHON
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ============================================
+# VIRTUAL ENVIRONMENTS
+# ============================================
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# ============================================
+# IDE / EDITORS
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================
+# LOGS
+# ============================================
+logs/
+*.log
+*.log.*
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================
+# TESTING
+# ============================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# ============================================
+# SECRETS & KEYS (NEVER COMMIT!)
+# ============================================
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials.json
+service-account.json
+api-keys.txt
+
+# ============================================
+# DATABASE
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# TEMPORARY FILES
+# ============================================
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.cache
+
+# ============================================
+# DOCKER (if needed)
+# ============================================
+.dockerignore
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ============================================
+# PROJECT SPECIFIC
+# ============================================
+# Debugging files
+debug_step*.txt
+
+# Cache directories
+cache/
+__pycache__/
+
+# Push scripts (contain sensitive tokens - don't commit)
+push-to-github.ps1
+push-to-github.bat
+GITHUB_PUSH_GUIDE.md
+QUICK_START.md
