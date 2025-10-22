@@ -222,35 +222,65 @@ async def process_articles_individually_with_db_state(
             result = None
             error_msg = ""
 
-            # Try Groq first, fallback to Gemini on any error
-            if use_groq and groq:
+            # ✨ PRIMARY: Try Gemini 2.0 Flash first (20 keys = 100 req/min capacity)
+            try:
+                gemini_analysis = await direct_gemini_service.enhanced_upsc_analysis(content, article.get("category", "current_affairs"))
+                # Wrap in gemini_analysis key (same structure as groq_analysis)
+                result = {**article, "gemini_analysis": gemini_analysis, "summary": gemini_analysis.get("summary", "")}
+                logger.info(f"   ✅ Gemini 2.0 Flash success (PRIMARY)")
+            except Exception as e:
+                error_msg = f"Gemini: {str(e)[:100]}"
+                # Handle Unicode encoding issues in logs
+                safe_error = error_msg.encode('ascii', errors='replace').decode('ascii')
+                logger.warning(f"   ⚠️ Gemini failed: {safe_error}")
+
+            # FALLBACK: Try Groq if Gemini failed
+            if not result and use_groq and groq:
                 try:
                     analysis = await groq.enhanced_upsc_analysis(content, article.get("category", "current_affairs"))
                     # Groq returns analysis directly - wrap in groq_analysis key
                     result = {**article, "groq_analysis": analysis, "summary": analysis.get("summary", "")}
-                    logger.info(f"   ✅ Groq success (collected in memory)")
-                except Exception as e:
-                    error_msg = f"Groq: {str(e)[:100]}"
-                    # Handle Unicode encoding issues in logs
-                    safe_error = error_msg.encode('ascii', errors='replace').decode('ascii')
-                    logger.warning(f"   ⚠️ Groq failed: {safe_error}")
-
-            # Fallback to Gemini if Groq failed or not enabled
-            if not result:
-                try:
-                    # NEW: Gemini now returns IDENTICAL schema via enhanced_upsc_analysis
-                    gemini_analysis = await direct_gemini_service.enhanced_upsc_analysis(content, article.get("category", "current_affairs"))
-                    # Wrap in gemini_analysis key (same structure as groq_analysis)
-                    result = {**article, "gemini_analysis": gemini_analysis, "summary": gemini_analysis.get("summary", "")}
-                    logger.info(f"   ✅ Gemini fallback success (collected in memory)")
+                    logger.info(f"   ✅ Groq fallback success")
                     if error_msg:
-                        error_msg += " (recovered with Gemini 2.0 Flash)"
+                        error_msg += " (recovered with Groq)"
                 except Exception as e:
-                    error_msg += f" Gemini: {str(e)[:100]}"
+                    error_msg += f" Groq: {str(e)[:100]}"
                     # Handle Unicode encoding issues in logs
                     safe_error = error_msg.encode('ascii', errors='replace').decode('ascii')
-                    logger.error(f"   ❌ Both Groq and Gemini failed: {safe_error} (skipping article)")
-                    continue  # Skip this article, continue with next
+                    logger.warning(f"   ⚠️ Groq also failed: {safe_error}")
+
+            # FINAL FALLBACK: Save with basic data if both Gemini and Groq failed
+            if not result:
+                error_msg += " Both APIs exhausted"
+                safe_error = error_msg.encode('ascii', errors='replace').decode('ascii')
+                logger.error(f"   ❌ Both Gemini and Groq failed: {safe_error}")
+                logger.warning(f"   🔄 Saving article with fallback analysis data")
+
+                # Create minimal HTML wrapper for content
+                basic_html = f"<p>{article.get('content', article.get('summary', 'Content pending enhancement'))}</p>"
+
+                # Create fallback analysis structure
+                fallback_analysis = {
+                    "factual_score": 30,
+                    "analytical_score": 25,
+                    "upsc_relevance": 40,
+                    "category": article.get("category", "current_affairs"),
+                    "key_facts": [article.get("title", "Review article for details")],
+                    "key_vocabulary": [],
+                    "syllabus_tags": ["General Current Affairs"],
+                    "exam_angles": {
+                        "prelims_facts": ["Factual review pending"],
+                        "mains_angles": ["Analysis pending"],
+                        "essay_themes": ["Current affairs topic"]
+                    },
+                    "revision_priority": "low",
+                    "processing_status": "preliminary",
+                    "summary": article.get("summary", "")[:200] if article.get("summary") else "Content available for review",
+                    "enhanced_content_html": basic_html
+                }
+
+                result = {**article, "gemini_analysis": fallback_analysis, "summary": fallback_analysis["summary"]}
+                logger.info(f"   ✅ Saved with fallback data (will be visible in UI)")
 
             if result:
                 refined.append(result)
@@ -493,7 +523,7 @@ async def complete_pipeline(
             # Create ProcessedArticle with all enhanced fields INCLUDING key_facts, key_vocabulary, exam_angles
             article_obj = ProcessedArticle(**{
                 "title": a.get("title", ""),
-                "content": a.get("content", ""),
+                "content": analysis.get("enhanced_content_html", a.get("content", "")),  # Use HTML if available
                 "summary": summary,
                 "source": a.get("source", ""),
                 "source_url": a.get("url") or a.get("source_url", ""),

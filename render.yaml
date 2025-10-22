@@ -61,10 +61,32 @@ services:
       # 1. FASTAPI_API_KEY - Backend authentication key
       # 2. SUPABASE_URL - Your Supabase project URL
       # 3. SUPABASE_SERVICE_ROLE_KEY - Supabase service role key
-      # 4. GEMINI_API_KEY - Google Gemini API key (primary)
-      # 5. GEMINI_API_KEY_2 through GEMINI_API_KEY_22 - Additional keys (optional)
-      # 6. GROQ_API_KEY - Groq API key (primary, optional)
-      # 7. GROQ_API_KEY_2 through GROQ_API_KEY_29 - Additional Groq keys (optional)
+      #
+      # AI API KEYS (MULTI-KEY ROTATION FOR RATE LIMIT AVOIDANCE):
+      #
+      # GROQ KEYS (use comma-separated for multiple keys):
+      # 4. GROQ_API_KEYS - Comma-separated Groq API keys (RECOMMENDED)
+      #    Example: key1,key2,key3,key4,key5,key6,key7,key8,key9,key10
+      #    Recommended: 10+ keys for sufficient capacity
+      #    NOTE: No spaces around commas!
+      #
+      # GEMINI KEYS (use comma-separated for multiple keys):
+      # 5. GEMINI_API_KEYS - Comma-separated Gemini API keys (RECOMMENDED)
+      #    Example: key1,key2,key3,key4,key5,key6,key7,key8,key9,key10,key11,key12,key13,key14,key15,key16,key17,key18,key19,key20
+      #    Recommended: 20+ keys for 100+ requests/min capacity
+      #    NOTE: No spaces around commas!
+      #
+      # Alternative (Legacy - NOT recommended):
+      # - GEMINI_API_KEY (primary)
+      # - GEMINI_API_KEY_2, GEMINI_API_KEY_3, ... (requires 20+ separate variables)
+      #
+      # Rate Limit Context:
+      # - Groq: Varies by plan, rotation spreads load across keys
+      # - Gemini Free: 5 requests/minute per key
+      # - With 20 Gemini keys: 100 requests/minute total capacity
+      # - Pipeline processes 25-50 articles, needs ~30-50 API calls
+      # - Without rotation: Only 4-6 articles saved (rate limits)
+      # - With rotation: 25-30+ articles saved successfully
       # =================================================================
 
       # Placeholder entries (values set via Render dashboard)

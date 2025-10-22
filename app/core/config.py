@@ -60,8 +60,15 @@ class Settings(BaseSettings):
         alias="GEMINI_API_KEY",
         description="Google Gemini API key for AI processing"
     )
-    
-    # Raw multi-key environment variable
+
+    # Raw multi-key environment variable for Gemini (NEW)
+    gemini_api_keys_raw: str = Field(
+        default="",
+        alias="GEMINI_API_KEYS",
+        description="Raw comma-separated Gemini API keys (recommended for easy setup)"
+    )
+
+    # Raw multi-key environment variable for Groq
     groq_api_keys_raw: str = Field(
         default="",
         alias="GROQ_API_KEYS",
@@ -290,28 +297,45 @@ class Settings(BaseSettings):
     @property
     def all_gemini_api_keys(self) -> List[str]:
         """
-        Get all Gemini API keys from environment with numbered suffix support
-        Supports: GEMINI_API_KEY, GEMINI_API_KEY_2, ..., GEMINI_API_KEY_50
+        Get all Gemini API keys with support for BOTH formats:
+        1. GEMINI_API_KEYS (comma-separated) - RECOMMENDED for Render/production
+        2. GEMINI_API_KEY_2, _3, etc. (numbered) - Legacy support
 
         This enables multi-key rotation to avoid Gemini's 5 requests/minute rate limit.
-        With 23 keys, you get 115 requests/minute capacity.
+        With 20+ keys, you get 100+ requests/minute capacity.
 
         Returns:
             List of API keys loaded from environment
         """
         import os
+        import logging
+        logger = logging.getLogger(__name__)
         keys = []
 
-        # Primary key (GEMINI_API_KEY)
-        if self.gemini_api_key and self.gemini_api_key.strip():
-            keys.append(self.gemini_api_key.strip())
+        # METHOD 1: Comma-separated (NEW - RECOMMENDED)
+        if self.gemini_api_keys_raw:
+            comma_keys = [key.strip() for key in self.gemini_api_keys_raw.split(',') if key.strip()]
+            keys.extend(comma_keys)
+            logger.info(f"✅ Loaded {len(comma_keys)} Gemini keys from GEMINI_API_KEYS (comma-separated)")
 
-        # Additional numbered keys (GEMINI_API_KEY_2 through GEMINI_API_KEY_50)
-        for i in range(2, 51):  # Support up to 50 keys
-            env_var_name = f"GEMINI_API_KEY_{i}"
-            key = os.getenv(env_var_name)
-            if key and key.strip():
-                keys.append(key.strip())
+        # METHOD 2: Primary key (GEMINI_API_KEY)
+        if self.gemini_api_key and self.gemini_api_key.strip():
+            if self.gemini_api_key.strip() not in keys:  # Avoid duplicates
+                keys.append(self.gemini_api_key.strip())
+                if not self.gemini_api_keys_raw:  # Only log if not using comma-separated
+                    logger.info(f"✅ Loaded primary Gemini key from GEMINI_API_KEY")
+
+        # METHOD 3: Numbered suffix (Legacy - backward compatibility)
+        if not self.gemini_api_keys_raw:  # Only check numbered if comma-separated not used
+            numbered_count = 0
+            for i in range(2, 51):  # Support up to 50 keys
+                env_var_name = f"GEMINI_API_KEY_{i}"
+                key = os.getenv(env_var_name)
+                if key and key.strip() and key.strip() not in keys:
+                    keys.append(key.strip())
+                    numbered_count += 1
+            if numbered_count > 0:
+                logger.info(f"✅ Loaded {numbered_count} additional Gemini keys using numbered suffix")
 
         return keys
     

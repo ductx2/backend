@@ -124,12 +124,16 @@ class GroqLLMService:
                     "type": "string",
                     "maxLength": 500,
                     "description": "2-sentence summary for UPSC preparation context"
+                },
+                "enhanced_content_html": {
+                    "type": "string",
+                    "description": "Professionally formatted HTML content with semantic structure, headings, lists, and emphasis for rich display"
                 }
             },
             "required": [
-                "factual_score", "analytical_score", "upsc_relevance", "category", 
+                "factual_score", "analytical_score", "upsc_relevance", "category",
                 "key_facts", "key_vocabulary", "syllabus_tags", "exam_angles",
-                "revision_priority", "processing_status", "summary"
+                "revision_priority", "processing_status", "summary", "enhanced_content_html"
             ],
             "additionalProperties": False
         }
@@ -172,36 +176,110 @@ class GroqLLMService:
     
     def _build_analysis_prompt(self, content: str, category: str) -> str:
         """
-        Build optimized analysis prompt with strict UPSC scoring criteria
-        Reduced content length and concise instructions for better token efficiency
+        Build world-class analysis prompt with STRICT scoring + HTML generation
+        Optimized for token efficiency while maintaining quality
         """
-        # Optimized content length - save tokens for comprehensive response
-        content_length = min(len(content), 6000)  # Reduced from 10000 to save ~1000 response tokens
+        # Optimize content length - save tokens for comprehensive HTML response
+        content_length = min(len(content), 6000)
         analysis_content = content[:content_length] if len(content) > content_length else content
-        
-        prompt = f"""Expert UPSC analyst. Analyze this content with STRICT scoring standards.
 
-CONTENT: {analysis_content}
+        prompt = f"""You are an expert UPSC Civil Services content analyst. Analyze this news article with STRICT standards and generate professional HTML-formatted content.
 
-STRICT SCORING (0-100, be conservative):
-- factual_score: Count concrete facts only (dates, numbers, names, policies). Most articles: 20-40, exceptional: 50+
-- analytical_score: Depth of policy analysis/implications. Basic news: 15-35, deep analysis: 50+  
-- upsc_relevance: Direct UPSC syllabus alignment. Peripheral: 20-40, core topics: 60+
+ARTICLE CONTENT:
+{analysis_content}
 
-EXTRACT:
-- key_facts: Specific numbers, dates, names, policies (max 10 most important)
-- key_vocabulary: Technical terms, acronyms (max 10)
-- syllabus_tags: Map to GS1/GS2/GS3/GS4 (max 5 most relevant)
+=== TASK 1: STRICT SCORING (Be Conservative) ===
 
-EXAM UTILITY:
-- prelims_facts: Direct MCQ-suitable facts (max 8)
-- mains_angles: 10/15-mark question angles (max 5)
-- essay_themes: Broader themes for essays (max 3)
+FACTUAL SCORE (0-100):
+- Count concrete facts ONLY: dates, numbers, names, policies, statistics
+- Most articles: 20-40 (basic facts)
+- Exceptional: 50+ (rich factual content)
+
+ANALYTICAL SCORE (0-100):
+- Assess depth of policy analysis, cause-effect relationships, implications
+- Basic news: 15-35 (surface level)
+- Deep analysis: 50+ (comprehensive insights)
+
+UPSC RELEVANCE (0-100):
+- Direct UPSC syllabus alignment
+- Peripheral topics: 20-40
+- Core topics (GS Papers): 60+
+- Critical exam topics: 80+
+
+=== TASK 2: METADATA EXTRACTION ===
+
+KEY_FACTS (Array):
+- Extract 5-10 most important facts
+- Focus on: dates, numbers, names, policies, locations
+- Each fact should be self-contained and specific
+- Example: "NHAI to deploy 100 Network Survey Vehicles across 20,000 km"
+
+KEY_VOCABULARY (Array):
+- Extract 5-10 technical terms, acronyms, important names
+- UPSC-relevant terminology only
+- Example: ["NHAI", "Network Survey Vehicles", "National Highways"]
+
+SYLLABUS_TAGS (Array):
+- Map to specific GS paper topics (max 5)
+- Format: "GS3: Infrastructure Development", "GS2: Government Policies"
+
+EXAM_ANGLES:
+- prelims_facts: 5-8 MCQ-suitable factual points
+- mains_angles: 3-5 analytical angles for 10/15 mark questions
+- essay_themes: 2-3 broader themes for essay writing
+
+=== TASK 3: HTML CONTENT GENERATION (CRITICAL) ===
+
+Generate enhanced_content_html with PROFESSIONAL formatting:
+
+STRUCTURE REQUIREMENTS:
+1. Start with <h2> for main sections (e.g., "Overview", "Key Developments")
+2. Use <h3> for subsections
+3. Wrap ALL paragraphs in <p> tags
+4. Format bullet points as <ul><li>...</li></ul>
+5. Use <strong> for important numbers, dates, names, acronyms
+6. Create scannable, well-organized content
+
+CONTENT ENHANCEMENT:
+- Reorganize content into logical sections
+- Highlight UPSC-relevant information
+- Add context where needed
+- Make it visually appealing and easy to scan
+
+EXAMPLE STRUCTURE:
+<h2>Overview</h2>
+<p>The <strong>National Highways Authority of India (NHAI)</strong> announced deployment of <strong>100 Network Survey Vehicles</strong> to monitor over <strong>20,000 km</strong> of national highways. This initiative aims to improve road infrastructure quality assessment.</p>
+
+<h3>Key Developments</h3>
+<ul>
+  <li><strong>Timeline:</strong> Deployment begins <strong>January 2025</strong></li>
+  <li><strong>Coverage:</strong> Focus on <strong>Golden Quadrilateral</strong> and <strong>North-South-East-West Corridor</strong></li>
+  <li><strong>Technology:</strong> GPS-enabled vehicles with advanced sensors</li>
+</ul>
+
+<h3>UPSC Relevance</h3>
+<p>This initiative connects to <strong>GS3: Infrastructure</strong> and demonstrates government focus on <strong>road network modernization</strong>. Key for Mains questions on infrastructure development.</p>
+
+<h3>Important Facts</h3>
+<ul>
+  <li>India has over <strong>1.4 lakh km</strong> of national highways</li>
+  <li>NHAI manages approximately <strong>1.3 lakh km</strong></li>
+  <li>Budget allocation: <strong>₹2,000 crore</strong> for FY 2024-25</li>
+</ul>
+
+QUALITY STANDARDS:
+- Content should be 2-3x the length of original (add context, structure)
+- Every important number/date must be in <strong> tags
+- Use semantic HTML (not just <div> tags)
+- Make it readable and professional
+
+=== OUTPUT FORMAT ===
+
+Return ONLY valid JSON matching the schema. Be strict with scoring - most articles are preliminary (30-50 combined score), few are quality (50-70), very few are premium (70+).
 
 PRIORITY: high (core UPSC), medium (relevant), low (peripheral)
-SUMMARY: 2 sentences max, focus on exam utility
+SUMMARY: 2 sentences max, focus on exam utility"""
 
-Be strict - most content is preliminary/quality tier. Premium tier reserved for exceptional UPSC-critical content only."""
         return prompt
     
     async def _make_groq_structured_request(self, prompt: str, max_retries: int = None) -> Dict[str, Any]:
@@ -234,7 +312,7 @@ Be strict - most content is preliminary/quality tier. Premium tier reserved for 
                 }
             },
             "temperature": 0.1,
-            "max_tokens": 3500,
+            "max_tokens": 5000,  # Increased from 3500 for HTML generation
             "top_p": 0.8,
             "stream": False
         }
