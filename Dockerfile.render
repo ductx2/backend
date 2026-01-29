@@ -1,72 +1,37 @@
-# FastAPI Backend Dockerfile - Optimized for Production
-# Revolutionary RSS Processing System with Enhanced Drishti IAS Integration
-# Compatible with: Python 3.13, FastAPI 0.116.1
+# FastAPI Backend Dockerfile - Lightweight for Render
+# RSS Processing Pipeline (no Chrome/Selenium needed)
 
 FROM python:3.13-slim
 
-# Set environment variables for optimal performance
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONHASHSEED=random \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Create app directory and user for security
 WORKDIR /app
-RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Step 1: Install base dependencies (wget, curl, etc.)
+# Install minimal system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    gnupg \
-    unzip \
     curl \
-    xvfb \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Step 2: Add Google Chrome repository and install Chrome
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends google-chrome-stable \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Copy requirements first for better Docker layer caching
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-
-# Install Python dependencies with optimizations
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Set up Chrome for headless operation (Drishti scraper)
-ENV DISPLAY=:99 \
-    CHROME_BIN=/usr/bin/google-chrome \
-    CHROME_DRIVER_PATH=/usr/bin/chromedriver
-
-# Create directories and set permissions
-RUN mkdir -p /app/logs /app/cache /app/temp \
-    && chown -R appuser:appuser /app \
-    && chmod -R 755 /app
-
-# Switch to non-root user for security
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port
 EXPOSE 8000
 
-# Health check for container orchestration
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Production-optimized startup command
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--access-log", \
-     "--log-level", "info"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
