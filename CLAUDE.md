@@ -1,0 +1,1 @@
+- Only implemnt what i approve don't try to add thing without asking and when you are doing any change make sure you are 100% sure that the change you are doing fix the root cause

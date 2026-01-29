@@ -1,0 +1,69 @@
+# FastAPI Backend Requirements - Python 3.13.5 Compatible
+# Optimized for Revolutionary RSS Processing System
+# Last Updated: 2025-08-29
+
+# Core FastAPI framework
+fastapi>=0.116.1
+uvicorn[standard]>=0.31.0
+
+# Pydantic settings for environment variables
+pydantic-settings>=2.6.1
+
+# Database integration (Supabase)
+supabase>=2.9.1
+
+# CENTRALIZED LLM SYSTEM (55 API KEYS ACROSS 9 PROVIDERS)
+# AI processing (Google Gemini 2.5 Flash)
+google-generativeai>=0.8.3
+# Centralized LLM router with multi-provider support
+litellm>=1.57.15
+# Additional AI provider libraries
+openai>=1.58.1  # For OpenRouter compatibility
+
+# REVOLUTIONARY RSS PROCESSING DEPENDENCIES
+# Professional RSS parsing (replaces custom regex)
+feedparser>=6.0.11
+# Async HTTP client for parallel processing
+httpx>=0.28.0
+# HTML content cleaning and parsing
+beautifulsoup4>=4.12.3
+lxml>=5.3.0
+
+# ENHANCED DRISHTI IAS SCRAPING DEPENDENCIES - CHROME-FREE ARCHITECTURE
+# REMOVED: selenium>=4.26.1 (Chrome-free architecture implemented)
+# REMOVED: webdriver-manager>=4.0.2 (No longer needed)
+# BeautifulSoup for HTML parsing
+beautifulsoup4>=4.12.3  # Already included above
+# HTTP client for Chrome-free requests
+requests>=2.32.3
+
+# UNIVERSAL CONTENT EXTRACTION DEPENDENCIES
+# newspaper3k for news article extraction
+newspaper3k>=0.2.8
+# trafilatura for general web content extraction
+trafilatura>=1.12.2
+# readability for content extraction from complex layouts
+readability-lxml>=0.8.1
+# Additional HTTP client features
+requests-html>=0.10.0
+
+# Additional utilities
+python-multipart>=0.0.12
+python-dotenv>=1.0.1
+
+# Security and authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# Development and testing
+pytest>=8.3.4
+pytest-asyncio>=0.24.0
+pytest-mock>=3.14.0
+
+# Code quality
+black>=24.10.0
+isort>=5.13.2
+flake8>=7.1.1
+
+# Production server
+gunicorn>=23.0.0

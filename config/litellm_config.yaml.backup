@@ -1,0 +1,35 @@
+model_list:
+  # ==============================================
+  # GEMINI 2.5 FLASH ONLY - USER PROVIDED KEY
+  # ==============================================
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: "AIzaSyBW6TlpQnmCdGybYkmTTjY2uwsgNR3cTgk"
+      rpm: 2000
+
+# ==============================================
+# ROUTER SETTINGS - SIMPLIFIED
+# ==============================================
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 30
+  allowed_fails: 1
+  cooldown_time: 10
+  enable_pre_call_checks: true
+
+# ==============================================
+# GENERAL SETTINGS
+# ==============================================
+general_settings:
+  completion_model: gemini-2.5-flash  # Default to Gemini
+  disable_spend_logs: true
+  
+# ==============================================
+# FALLBACK CONFIGURATION - SIMPLIFIED
+# ==============================================
+litellm_settings:
+  cooldown_time: 10
+  num_retries: 2
+  request_timeout: 30

@@ -1,0 +1,99 @@
+# Docker ignore file for optimized builds
+# Exclude unnecessary files to reduce build context
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+
+# Documentation and development files
+README.md
+DEPLOYMENT_GUIDE.md
+*.md
+
+# Test files and scripts
+test_*.py
+*_test.py
+tests/
+
+# Environment files (should be set via Docker environment)
+.env
+.env.*
+
+# Logs and temporary files
+*.log
+logs/
+temp/
+tmp/
+cache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Development and deployment files
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile.*
+.dockerignore
+
+# Railway and deployment configs (not needed in container)
+railway.json
+Procfile
+runtime.txt
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Coverage reports and performance data
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Node.js (if any frontend artifacts)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Backup files
+*.bak
+*.backup
+*.orig
