@@ -215,9 +215,9 @@ class CentralizedLLMService:
         if api_key:
             model_list.append(
                 {
-                    "model_name": "groq-llama",
+                    "model_name": "gpt-oss-120b",
                     "litellm_params": {
-                        "model": "groq/llama-3.3-70b-versatile",
+                        "model": "openai/gpt-oss-120b",
                         "api_key": api_key,
                         "base_url": "https://ai-gateway.vercel.sh/v1",
                     },
@@ -304,9 +304,9 @@ class CentralizedLLMService:
         }
 
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
-        model = "groq-llama"
+        model = "deepseek-v3.2"
         logger.info(
-            f"🎯 Selected model: {model} (Groq - 455 tps, $0.15/M) (preference: {preference})"
+            f"🎯 Selected model: {model} (DeepSeek V3.2 via Vercel AI Gateway - proven quality) (preference: {preference})"
         )
         return model
 
