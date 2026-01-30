@@ -199,18 +199,30 @@ class CentralizedLLMService:
             raise
 
     async def _initialize_basic_router(self):
-        """Fallback basic router initialization - VERCEL AI GATEWAY + DEEPSEEK V3.2
+        """Fallback basic router initialization - VERCEL AI GATEWAY + GROQ
 
-        Using Vercel AI Gateway with DeepSeek V3.2:
-        - $0.27/M input, $0.40/M output (21x cheaper than Gemini)
+        Using Vercel AI Gateway with Groq:
+        - Fast inference: 455 tokens/sec, 0.1s latency
+        - Cheap: $0.15/M input (cheaper than Cerebras and DeepSeek)
         - Full structured output support (JSON Schema)
-        - Built-in fallbacks and reliability
+        - Pipeline will complete in ~5-7 minutes instead of 19-20 minutes
         """
         model_list = []
 
-        # Use Vercel AI Gateway with DeepSeek V3.2
-        api_key = os.environ.get("VERCEL_AI_GATEWAY_API_KEY")
+        api_key = os.environ.get("VERCEL_AI_GATEWAY_API_KEY") or os.environ.get(
+            "AI_GATEWAY_API_KEY"
+        )
         if api_key:
+            model_list.append(
+                {
+                    "model_name": "groq-llama",
+                    "litellm_params": {
+                        "model": "groq/llama-3.3-70b-versatile",
+                        "api_key": api_key,
+                        "base_url": "https://ai-gateway.vercel.sh/v1",
+                    },
+                }
+            )
             model_list.append(
                 {
                     "model_name": "deepseek-v3.2",
@@ -222,7 +234,9 @@ class CentralizedLLMService:
                 }
             )
         else:
-            raise ValueError("VERCEL_AI_GATEWAY_API_KEY not found in environment")
+            raise ValueError(
+                "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
+            )
 
         from litellm import Router
 
@@ -234,7 +248,47 @@ class CentralizedLLMService:
             allowed_fails=2,
         )
         logger.info(
-            f"✅ Basic LiteLLM router initialized with Vercel AI Gateway + DeepSeek V3.2"
+            f"✅ Basic LiteLLM router initialized with Vercel AI Gateway + Groq (455 tps)"
+        )
+        if api_key:
+            # Primary: Cerebras (FASTEST - 1725 tps)
+            model_list.append(
+                {
+                    "model_name": "cerebras-llama",
+                    "litellm_params": {
+                        "model": "cerebras/llama-3.3-70b",
+                        "api_key": api_key,
+                        "base_url": "https://ai-gateway.vercel.sh/v1",
+                    },
+                }
+            )
+            # Fallback: DeepSeek V3.2 (slower but reliable)
+            model_list.append(
+                {
+                    "model_name": "deepseek-v3.2",
+                    "litellm_params": {
+                        "model": "openai/deepseek-v3.2",
+                        "api_key": api_key,
+                        "base_url": "https://ai-gateway.vercel.sh/v1",
+                    },
+                }
+            )
+        else:
+            raise ValueError(
+                "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
+            )
+
+        from litellm import Router
+
+        self.router = Router(
+            model_list=model_list,
+            routing_strategy="simple-shuffle",
+            num_retries=3,
+            timeout=60,
+            allowed_fails=2,
+        )
+        logger.info(
+            f"✅ Basic LiteLLM router initialized with Vercel AI Gateway + Cerebras (1725 tps)"
         )
 
     def _initialize_task_handlers(self) -> Dict[str, callable]:
@@ -250,15 +304,10 @@ class CentralizedLLMService:
         }
 
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
-        """Select optimal model based on preference - DEEPSEEK V3.2 VIA VERCEL AI GATEWAY
-
-        Using DeepSeek V3.2 via Vercel AI Gateway:
-        - Cost: $0.27/M input, $0.40/M output
-        - 21x cheaper than Gemini 2.5 Flash
-        - Full structured output support
-        """
-        model = "deepseek-v3.2"
-        logger.info(f"🎯 Selected model: {model} (preference: {preference})")
+        model = "groq-llama"
+        logger.info(
+            f"🎯 Selected model: {model} (Groq - 455 tps, $0.15/M) (preference: {preference})"
+        )
         return model
 
     async def process_request(self, request: LLMRequest) -> LLMResponse:
