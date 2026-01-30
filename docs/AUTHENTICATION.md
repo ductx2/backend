@@ -50,12 +50,14 @@ GEMINI_API_KEY=your_gemini_key
 ## Usage Examples
 
 ### Valid Request
+
 ```bash
 curl -H "Authorization: Bearer upsc_backend_secure_key_2025_dev" \
      http://localhost:8000/api/auth/verify
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -71,12 +73,14 @@ curl -H "Authorization: Bearer upsc_backend_secure_key_2025_dev" \
 ```
 
 ### Invalid Request
+
 ```bash
 curl -H "Authorization: Bearer invalid_key" \
      http://localhost:8000/api/auth/verify
 ```
 
 **Response:**
+
 ```json
 {
   "detail": "Invalid API key"
@@ -84,11 +88,13 @@ curl -H "Authorization: Bearer invalid_key" \
 ```
 
 ### Missing Authentication
+
 ```bash
 curl http://localhost:8000/api/auth/verify
 ```
 
 **Response:**
+
 ```json
 {
   "detail": "API key required for authentication"
@@ -98,6 +104,7 @@ curl http://localhost:8000/api/auth/verify
 ## Security Features
 
 ### Security Headers
+
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `X-XSS-Protection: 1; mode=block`
@@ -105,11 +112,12 @@ curl http://localhost:8000/api/auth/verify
 - `Content-Security-Policy: default-src 'self'`
 
 ### CORS Configuration
+
 ```python
 {
     "allow_origins": [
         "http://localhost:3000",           # Next.js development
-        "https://upsc-kappa.vercel.app"    # Production frontend
+        "https://www.vaidra.in"            # Production frontend
     ],
     "allow_credentials": True,
     "allow_methods": ["GET", "POST", "PUT", "DELETE"],
@@ -151,12 +159,14 @@ async def admin_endpoint(user: dict = Depends(require_admin_access)):
 ## Testing
 
 ### Configuration Test
+
 ```bash
 cd backend
 python test_authentication.py
 ```
 
 ### Live Testing (Server Running)
+
 ```bash
 # Start server
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -176,16 +186,16 @@ const fetchWithAuth = async (endpoint: string, options = {}) => {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${API_KEY}`,
+      Authorization: `Bearer ${API_KEY}`,
       'Content-Type': 'application/json',
-      ...options.headers
-    }
+      ...options.headers,
+    },
   });
-  
+
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
-  
+
   return response.json();
 };
 
@@ -196,12 +206,14 @@ const data = await fetchWithAuth('/api/auth/verify');
 ## Production Deployment
 
 ### Railway Configuration
+
 ```bash
 # Set environment variable in Railway
 FASTAPI_API_KEY=upsc_backend_secure_key_2025_production
 ```
 
 ### Security Checklist
+
 - ✅ API key is randomly generated and secure
 - ✅ HTTPS enforced in production
 - ✅ Security headers configured
@@ -212,11 +224,13 @@ FASTAPI_API_KEY=upsc_backend_secure_key_2025_production
 ## Error Handling
 
 ### Authentication Errors
+
 - **401 Unauthorized** - Invalid or missing API key
 - **403 Forbidden** - Valid key but insufficient permissions (future use)
 - **500 Internal Server Error** - Server-side authentication error
 
 ### Error Response Format
+
 ```json
 {
   "success": false,
@@ -235,5 +249,5 @@ FASTAPI_API_KEY=upsc_backend_secure_key_2025_production
 
 ---
 
-*Authentication system implemented: 2025-08-29*  
-*Compatible with: FastAPI 0.116.1, Python 3.13.5*
+_Authentication system implemented: 2025-08-29_  
+_Compatible with: FastAPI 0.116.1, Python 3.13.5_
