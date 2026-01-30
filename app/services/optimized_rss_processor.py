@@ -232,25 +232,19 @@ class OptimizedRSSProcessor:
             return []
 
     def _get_optimized_headers(self, source: PremiumRSSSource) -> Dict[str, str]:
-        """Get optimized headers based on source requirements"""
+        """Get optimized headers for all sources to prevent bot detection"""
 
-        # PIB requires special headers (found in forensic analysis)
-        if "PIB" in source.name:
-            return {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/rss+xml, application/xml, text/xml, application/atom+xml, */*",
-                "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Cache-Control": "max-age=0",
-                "DNT": "1",
-            }
-        else:
-            return {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/rss+xml, application/xml, text/xml, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-            }
+        # Apply comprehensive headers to ALL sources (not just PIB)
+        # This prevents 403 Forbidden errors from sources like Indian Express
+        return {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/rss+xml, application/xml, text/xml, application/atom+xml, */*",
+            "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Cache-Control": "max-age=0",
+            "DNT": "1",
+        }
 
     def _convert_feed_entry(
         self, entry: Any, source_name: str
