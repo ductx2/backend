@@ -2,6 +2,7 @@ import asyncio
 import time
 import json
 import os
+import re
 import logging
 import litellm
 from typing import Dict, Any, Optional
@@ -12,6 +13,27 @@ from app.models.llm_schemas import *
 litellm.enable_json_schema_validation = True
 
 logger = logging.getLogger(__name__)
+
+
+def strip_markdown_json(text: str) -> str:
+    """Strip markdown code blocks from JSON response.
+
+    Gemini often returns JSON wrapped in ```json ... ``` blocks.
+    This function extracts the raw JSON content.
+    """
+    if not text:
+        return text
+
+    text = text.strip()
+
+    # Pattern to match ```json ... ``` or ``` ... ```
+    pattern = r'^```(?:json)?\s*\n?(.*?)\n?```$'
+    match = re.match(pattern, text, re.DOTALL)
+
+    if match:
+        return match.group(1).strip()
+
+    return text
 
 class CentralizedLLMService:
     def __init__(self):
@@ -139,64 +161,46 @@ class CentralizedLLMService:
             raise
     
     async def _initialize_basic_router(self):
-        """Fallback basic router initialization - LATEST 2024-2025 MODELS"""
-        # Updated model list with round-robin support (same model names)
-        model_list = [
-            # Round-robin entries for deepseek-r1-free
-            {
-                "model_name": "deepseek-r1-free",
-                "litellm_params": {
-                    "model": "openrouter/deepseek/deepseek-r1:free",
-                    "api_key": os.environ.get("OPENROUTER_API_KEY_1"),
-                    "api_base": "https://openrouter.ai/api/v1"
-                }
-            },
-            {
-                "model_name": "deepseek-r1-free",
-                "litellm_params": {
-                    "model": "openrouter/deepseek/deepseek-r1:free",
-                    "api_key": os.environ.get("OPENROUTER_API_KEY_1"),  # Using same key for demo
-                    "api_base": "https://openrouter.ai/api/v1"
-                }
-            },
-            {
-                "model_name": "openrouter_deepseek_distill_free_1",
-                "litellm_params": {
-                    "model": "openrouter/deepseek/deepseek-r1-distill-llama-70b:free",
-                    "api_key": os.environ.get("OPENROUTER_API_KEY_1"),
-                    "api_base": "https://openrouter.ai/api/v1"
-                }
-            },
-            # Gemini 2.5 Flash (latest)
-            {
-                "model_name": "gemini_25_flash_1",
-                "litellm_params": {
-                    "model": "gemini/gemini-2.5-flash",
-                    "api_key": os.environ.get("GEMINI_API_KEY_1")
-                }
-            },
-            # DeepSeek V3.1 Direct
-            {
-                "model_name": "deepseek_chat_v31_1",
-                "litellm_params": {
-                    "model": "deepseek/deepseek-chat",
-                    "api_key": os.environ.get("DEEPSEEK_API_KEY_1")
-                }
-            }
-        ]
-        
+        """Fallback basic router initialization - GEMINI ONLY
+
+        Using Gemini 2.5 Flash Lite (separate quota pool, works with free tier).
+        Multiple API keys for round-robin rate limit handling.
+        """
+        model_list = []
+
+        # Add all available Gemini API keys for round-robin
+        for i in range(1, 6):
+            api_key = os.environ.get(f"GEMINI_API_KEY_{i}")
+            if api_key:
+                model_list.append({
+                    "model_name": "gemini-2.5-flash-lite",
+                    "litellm_params": {
+                        "model": "gemini/gemini-2.5-flash-lite",
+                        "api_key": api_key
+                    }
+                })
+
+        # Fallback to single key if numbered keys not found
+        if not model_list:
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if api_key:
+                model_list.append({
+                    "model_name": "gemini-2.5-flash-lite",
+                    "litellm_params": {
+                        "model": "gemini/gemini-2.5-flash-lite",
+                        "api_key": api_key
+                    }
+                })
+
         from litellm import Router
         self.router = Router(
             model_list=model_list,
-            routing_strategy='simple-shuffle',  # Round-robin distribution
+            routing_strategy='simple-shuffle',
             num_retries=3,
-            timeout=30,
+            timeout=60,
             allowed_fails=2
         )
-        logger.info("✅ Basic LiteLLM router initialized with round-robin support:")
-        logger.info(f"📊 Models configured: {len(model_list)}")
-        logger.info("🔄 Round-robin strategy enabled")
-        logger.info("🆓 Priority: FREE OpenRouter models")
+        logger.info(f"✅ Basic LiteLLM router initialized with {len(model_list)} Gemini 2.5 Flash Lite keys")
         
     def _initialize_task_handlers(self) -> Dict[str, callable]:
         """Map task types to their specific handlers"""
@@ -211,41 +215,13 @@ class CentralizedLLMService:
         }
     
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
-        """Select optimal model based on preference - YAML CONFIG MODELS"""
-        # Exact model names from YAML configuration (round-robin enabled)
-        available_models = [
-            "deepseek-r1-free",        # OpenRouter DeepSeek R1 Free (5 keys)
-            "llama-3.1-8b-free",       # OpenRouter Llama 3.1 8B Free (5 keys)
-            "llama-3.3-70b",           # Groq Llama 3.3 70B (5 keys) 
-            "llama-3.1-8b-instant",    # Groq Llama 3.1 8B Instant (5 keys)
-            "cerebras-llama-3.1-8b",   # Cerebras Llama 3.1 8B (5 keys)
-            "cerebras-llama-3.1-70b",  # Cerebras Llama 3.1 70B (5 keys)
-            "deepseek-chat-v3.1",      # DeepSeek Direct V3.1 (5 keys)
-            "deepseek-reasoner-v3.1",  # DeepSeek Reasoner (5 keys)
-            "together-llama-4-scout",  # Together AI Llama 4 Scout (5 keys)
-            "mistral-large-2411",      # Mistral Large 2411 (5 keys)
-            "gemini-2.5-flash"         # Gemini 2.5 Flash (5 keys)
-        ]
-        
-        model_preferences = {
-            ProviderPreference.COST_OPTIMIZED: ["llama-3.3-70b", "mixtral-8x7b", "llama-3.1-8b-instant"],  # Use powerful models first
-            ProviderPreference.SPEED_OPTIMIZED: ["llama-3.3-70b", "mixtral-8x7b", "llama-3.1-8b-instant"],  # 70B is still fast on Groq
-            ProviderPreference.QUALITY_OPTIMIZED: ["llama-3.3-70b", "gemini-2.5-flash", "mixtral-8x7b"],   # Best quality first
-            ProviderPreference.BALANCED: ["llama-3.3-70b", "gemini-2.5-flash", "mixtral-8x7b"]             # Powerful models for reliability
-        }
-        
-        preferred_models = model_preferences.get(preference, ["llama-3.3-70b"])
-        
-        # Return first available model from preference list
-        for model in preferred_models:
-            if model in available_models:
-                logger.info(f"🎯 Selected model: {model} (preference: {preference})")
-                return model
-        
-        # Fallback to Groq model since we have working keys
-        fallback_model = "llama-3.3-70b"
-        logger.info(f"🔄 Using fallback model: {fallback_model}")
-        return fallback_model
+        """Select optimal model based on preference - GEMINI ONLY
+
+        Using Gemini 2.5 Flash Lite (separate quota pool, works with free tier).
+        """
+        model = "gemini-2.5-flash-lite"
+        logger.info(f"🎯 Selected model: {model} (preference: {preference})")
+        return model
     
     async def process_request(self, request: LLMRequest) -> LLMResponse:
         """Main processing function - handles all LLM requests"""
@@ -339,8 +315,9 @@ class CentralizedLLMService:
                 max_tokens=request.max_tokens
             )
             
-            # Official structured response - already validated JSON object
-            result_data = json.loads(response.choices[0].message.content)
+            # Official structured response - strip markdown and parse
+            clean_json = strip_markdown_json(response.choices[0].message.content)
+            result_data = json.loads(clean_json)
             logger.info(f"✅ Official structured response received and validated")
             
             return {
@@ -356,57 +333,73 @@ class CentralizedLLMService:
             raise
     
     async def _handle_upsc_analysis(self, request: LLMRequest, model: str) -> Dict[str, Any]:
-        """Handle UPSC relevance analysis and scoring"""
-        
+        """Handle UPSC relevance analysis and scoring with official structured response"""
+
         prompt = f"""You are a UPSC subject expert analyzing content for civil services exam relevance.
-        
+
         Content: {request.content}
-        
+
         Analyze this content for UPSC Civil Services Examination relevance across:
-        - General Studies Paper 1 (History, Geography, Culture)  
+        - General Studies Paper 1 (History, Geography, Culture)
         - General Studies Paper 2 (Governance, Constitution, Politics)
         - General Studies Paper 3 (Economy, Environment, Technology, Security)
         - General Studies Paper 4 (Ethics, Integrity, Aptitude)
-        
+
         Provide detailed analysis with scoring from 1-100 where:
         - 1-30: Low relevance (general news)
-        - 31-60: Medium relevance (useful context)  
+        - 31-60: Medium relevance (useful context)
         - 61-85: High relevance (exam important)
         - 86-100: Critical relevance (must-know for exam)
-        
+
         Current minimum threshold is 40+ for content to be saved.
-        
-        Return ONLY a valid JSON response (no extra text):
-        {{
-            "upsc_relevance": score,
-            "relevant_papers": ["GS1", "GS2"],
-            "key_topics": ["topic1", "topic2"],
-            "importance_level": "High/Medium/Low/Critical",
-            "question_potential": "High/Medium/Low",
-            "static_connections": ["connection1"],
-            "summary": "brief summary"
-        }}
-        
+
         {request.custom_instructions or ""}
         """
-        
+
+        # Official Google structured response schema
+        upsc_analysis_schema = {
+            "type": "object",
+            "properties": {
+                "upsc_relevance": {"type": "integer", "minimum": 1, "maximum": 100},
+                "relevant_papers": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["GS1", "GS2", "GS3", "GS4"]}
+                },
+                "key_topics": {"type": "array", "items": {"type": "string"}},
+                "importance_level": {"type": "string", "enum": ["Low", "Medium", "High", "Critical"]},
+                "question_potential": {"type": "string", "enum": ["Low", "Medium", "High"]},
+                "static_connections": {"type": "array", "items": {"type": "string"}},
+                "summary": {"type": "string"}
+            },
+            "required": ["upsc_relevance", "relevant_papers", "key_topics", "importance_level", "question_potential", "summary"]
+        }
+
         try:
-            # Simple completion without complex structured response format
+            # Use official structured response format for Gemini
             response = await self.router.acompletion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "upsc_analysis",
+                        "schema": upsc_analysis_schema,
+                        "strict": True
+                    }
+                },
                 temperature=request.temperature,
                 max_tokens=request.max_tokens
             )
-            
-            # Extract and parse response text
+
+            # Parse structured response (should be clean JSON)
             response_text = response.choices[0].message.content
             if not response_text:
                 raise ValueError("Empty response from LLM")
-            
-            # Parse JSON from response
-            result_data = json.loads(response_text.strip())
-            logger.info(f"✅ [UPSC Analysis] JSON response received and parsed successfully")
+
+            # Strip markdown if present (fallback) and parse
+            clean_json = strip_markdown_json(response_text)
+            result_data = json.loads(clean_json)
+            logger.info(f"✅ [UPSC Analysis] Structured response received from {response.model}")
             
             return {
                 "provider_used": response.model,
@@ -473,8 +466,9 @@ class CentralizedLLMService:
                 max_tokens=request.max_tokens
             )
             
-            # Official structured response - already validated JSON object
-            result_data = json.loads(response.choices[0].message.content)
+            # Official structured response - strip markdown and parse
+            clean_json = strip_markdown_json(response.choices[0].message.content)
+            result_data = json.loads(clean_json)
             logger.info(f"✅ [Summarization] Official structured response received and validated")
             
             return {

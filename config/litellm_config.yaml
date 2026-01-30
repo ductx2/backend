@@ -1,92 +1,46 @@
 model_list:
-  # Gemini Models (Google AI)
-  - model_name: gemini-2.5-flash
+  # Gemini 2.5 Flash Lite - 3 API keys for round-robin
+  # Has separate quota pool from gemini-2.0-flash
+
+  - model_name: gemini-2.5-flash-lite
     litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY
-      rpm: 2000
-      timeout: 30
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY_1
+      rpm: 15
+      timeout: 60
 
-  # Groq Models (Fast inference)
-  - model_name: llama-3.3-70b
+  - model_name: gemini-2.5-flash-lite
     litellm_params:
-      model: groq/llama-3.3-70b-versatile
-      api_key: os.environ/GROQ_API_KEY
-      rpm: 6000
-      timeout: 30
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY_2
+      rpm: 15
+      timeout: 60
 
-  - model_name: llama-3.1-8b-instant
+  - model_name: gemini-2.5-flash-lite
     litellm_params:
-      model: groq/llama-3.1-8b-instant
-      api_key: os.environ/GROQ_API_KEY
-      rpm: 14400
-      timeout: 30
-
-  - model_name: mixtral-8x7b
-    litellm_params:
-      model: groq/mixtral-8x7b-32768
-      api_key: os.environ/GROQ_API_KEY
-      rpm: 5000
-      timeout: 30
-
-  # Additional providers can be added when API keys are available
-  # Uncomment and add your API keys to enable:
-  #
-  # - model_name: gpt-4o-mini
-  #   litellm_params:
-  #     model: gpt-4o-mini
-  #     api_key: os.environ/OPENAI_API_KEY
-  #     rpm: 3000
-  #     timeout: 30
-  #
-  # - model_name: claude-3-haiku
-  #   litellm_params:
-  #     model: claude-3-haiku-20240307
-  #     api_key: os.environ/ANTHROPIC_API_KEY
-  #     rpm: 1000
-  #     timeout: 30
-
-  # Additional working models can be added here when API keys are available
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY_3
+      rpm: 15
+      timeout: 60
 
 router_settings:
-  routing_strategy: least-busy
+  routing_strategy: simple-shuffle
   num_retries: 3
-  timeout: 30
+  timeout: 60
   allowed_fails: 2
-  cooldown_time: 60
+  cooldown_time: 15
   enable_pre_call_checks: true
-  fallbacks:
-    - gemini-2.5-flash: 
-        - llama-3.3-70b
-        - llama-3.1-8b-instant
-        - mixtral-8x7b
-    - llama-3.3-70b:
-        - llama-3.1-8b-instant
-        - mixtral-8x7b
-        - gemini-2.5-flash
-    - llama-3.1-8b-instant:
-        - llama-3.3-70b
-        - mixtral-8x7b
-        - gemini-2.5-flash
-    - mixtral-8x7b:
-        - llama-3.3-70b
-        - llama-3.1-8b-instant
-        - gemini-2.5-flash
 
 general_settings:
-  completion_model: llama-3.3-70b  # Default to most powerful model
+  completion_model: gemini-2.5-flash-lite
   disable_spend_logs: false
-  master_key: sk-1234
 
 litellm_settings:
   drop_params: true
   set_verbose: true
   json_logs: true
-  cooldown_time: 60
   num_retries: 3
-  request_timeout: 30
-  max_budget: 100
-  budget_duration: 1d
+  request_timeout: 60
 
 health_check_interval: 60
 health_check_timeout: 10
