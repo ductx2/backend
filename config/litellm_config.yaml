@@ -1,30 +1,32 @@
+# LiteLLM Router Configuration for UPSC Backend
+# Using Vercel AI Gateway with DeepSeek V3.2
+# Provider: Vercel AI Gateway (https://ai-gateway.vercel.sh/v1)
+# Model: DeepSeek V3.2 ($0.27/M input, $0.40/M output)
+#
+# Benefits:
+# - 21x cheaper than Gemini 2.5 Flash
+# - Full structured output support (JSON Schema)
+# - Built-in fallbacks and load balancing
+# - No markup on tokens
+# - Spend monitoring included
+#
+# Updated: 2025-01-30
+
 model_list:
-  # Gemini 2.5 Flash Lite - 3 API keys for round-robin
-  # Has separate quota pool from gemini-2.5-flash
-
-  - model_name: gemini-2.5-flash
+  # DeepSeek V3.2 via Vercel AI Gateway
+  # OpenAI-compatible API format
+  - model_name: deepseek-v3.2
     litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY_1
-      rpm: 15
+      model: openai/deepseek-v3.2
+      api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
+      base_url: 'https://ai-gateway.vercel.sh/v1'
+      rpm: 100 # Rate limit: 100 requests per minute
       timeout: 60
-
-  - model_name: gemini-2.5-flash
-    litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY_2
-      rpm: 15
-      timeout: 60
-
-  - model_name: gemini-2.5-flash
-    litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY_3
-      rpm: 15
-      timeout: 60
+      supports_function_calling: true
+      supports_vision: false
 
 router_settings:
-  routing_strategy: simple-shuffle
+  routing_strategy: simple-shuffle # Single model, no routing needed
   num_retries: 3
   timeout: 60
   allowed_fails: 2
@@ -32,12 +34,12 @@ router_settings:
   enable_pre_call_checks: true
 
 general_settings:
-  completion_model: gemini-2.5-flash
+  completion_model: deepseek-v3.2
   disable_spend_logs: false
 
 litellm_settings:
-  drop_params: true
-  set_verbose: true
+  drop_params: true # Drop unsupported params
+  set_verbose: false # Reduce logging noise
   json_logs: true
   num_retries: 3
   request_timeout: 60
