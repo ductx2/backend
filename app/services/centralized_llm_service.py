@@ -163,7 +163,7 @@ class CentralizedLLMService:
     async def _initialize_basic_router(self):
         """Fallback basic router initialization - GEMINI ONLY
 
-        Using Gemini 2.5 Flash Lite (separate quota pool, works with free tier).
+        Using Gemini 2.0 Flash (1500 RPD free tier per key).
         Multiple API keys for round-robin rate limit handling.
         """
         model_list = []
@@ -173,9 +173,9 @@ class CentralizedLLMService:
             api_key = os.environ.get(f"GEMINI_API_KEY_{i}")
             if api_key:
                 model_list.append({
-                    "model_name": "gemini-2.5-flash-lite",
+                    "model_name": "gemini-2.5-flash",
                     "litellm_params": {
-                        "model": "gemini/gemini-2.5-flash-lite",
+                        "model": "gemini/gemini-2.5-flash",
                         "api_key": api_key
                     }
                 })
@@ -185,9 +185,9 @@ class CentralizedLLMService:
             api_key = os.environ.get("GEMINI_API_KEY")
             if api_key:
                 model_list.append({
-                    "model_name": "gemini-2.5-flash-lite",
+                    "model_name": "gemini-2.5-flash",
                     "litellm_params": {
-                        "model": "gemini/gemini-2.5-flash-lite",
+                        "model": "gemini/gemini-2.5-flash",
                         "api_key": api_key
                     }
                 })
@@ -200,7 +200,7 @@ class CentralizedLLMService:
             timeout=60,
             allowed_fails=2
         )
-        logger.info(f"✅ Basic LiteLLM router initialized with {len(model_list)} Gemini 2.5 Flash Lite keys")
+        logger.info(f"✅ Basic LiteLLM router initialized with {len(model_list)} Gemini 2.0 Flash keys")
         
     def _initialize_task_handlers(self) -> Dict[str, callable]:
         """Map task types to their specific handlers"""
@@ -217,9 +217,9 @@ class CentralizedLLMService:
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
         """Select optimal model based on preference - GEMINI ONLY
 
-        Using Gemini 2.5 Flash Lite (separate quota pool, works with free tier).
+        Using Gemini 2.0 Flash (1500 RPD free tier per key).
         """
-        model = "gemini-2.5-flash-lite"
+        model = "gemini-2.5-flash"
         logger.info(f"🎯 Selected model: {model} (preference: {preference})")
         return model
     
