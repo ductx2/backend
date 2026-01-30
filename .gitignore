@@ -34,5 +34,7 @@ build/
 *~
 nul
 
-# JSON output files (optional - uncomment if needed)
-# *.json
+# JSON output files (pipeline results, test outputs)
+pipeline_*.json
+*_result.json
+*_response.json
