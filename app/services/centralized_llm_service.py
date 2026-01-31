@@ -38,7 +38,9 @@ def strip_markdown_json(text: str) -> str:
 
 class CentralizedLLMService:
     def __init__(self):
-        self.router = None
+        self.api_key = None
+        self.api_base = None
+        self.model_name = None
         self.task_handlers = self._initialize_task_handlers()
         self.provider_stats = {}
         self.response_schemas = self._initialize_response_schemas()
@@ -237,27 +239,26 @@ class CentralizedLLMService:
                     "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
                 )
 
-        model_list = [
-            {
-                "model_name": "gpt-oss-120b",
-                "litellm_params": {
-                    "model": "openai/gpt-oss-120b",
-                    "api_key": api_key,
-                    "api_base": "https://ai-gateway.vercel.sh/v1",
-                },
-            },
-        ]
+        # Store API key for direct calls (bypassing Router health checks)
+        self.api_key = api_key
+        self.api_base = "https://ai-gateway.vercel.sh/v1"
+        self.model_name = "openai/gpt-oss-120b"
 
-        self.router = Router(
-            model_list=model_list,
-            routing_strategy="simple-shuffle",
-            num_retries=3,
-            timeout=120,
-            allowed_fails=2,
-        )
         logger.info(
-            f"✅ LiteLLM router initialized with Vercel AI Gateway + GPT-OSS-120B (3000 tps)"
+            f"✅ LiteLLM initialized with Vercel AI Gateway + GPT-OSS-120B (direct mode)"
         )
+
+    async def _direct_completion(self, **kwargs):
+        """Direct litellm completion call bypassing Router health checks"""
+        import litellm
+
+        # Override model params with our config
+        kwargs["model"] = self.model_name
+        kwargs["api_key"] = self.api_key
+        kwargs["api_base"] = self.api_base
+
+        logger.info(f"🔄 Direct LLM call to {self.model_name}")
+        return await litellm.acompletion(**kwargs)
 
     def _initialize_task_handlers(self) -> Dict[str, callable]:
         """Map task types to their specific handlers"""
@@ -282,8 +283,8 @@ class CentralizedLLMService:
         """Main processing function - handles all LLM requests"""
         start_time = time.time()
 
-        # Initialize router if not done
-        if self.router is None:
+        # Initialize if not done
+        if not hasattr(self, 'api_key') or self.api_key is None:
             await self.initialize_router()
 
         try:
@@ -367,7 +368,7 @@ class CentralizedLLMService:
                 "schema": self.response_schemas["content_extraction"],
             }
 
-            response = await self.router.acompletion(
+            response = await self._direct_completion(
                 model=model,
                 messages=[{"role": "user", "content": prompt + "\n\nReturn ONLY valid JSON, no other text."}],
                 response_format=content_extraction_response_format,
@@ -514,7 +515,7 @@ class CentralizedLLMService:
 
         try:
             # Use Vercel AI Gateway's legacy JSON format for structured output
-            response = await self.router.acompletion(
+            response = await self._direct_completion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 response_format=upsc_response_format,
@@ -641,7 +642,7 @@ Title requirements:
                 "schema": self.response_schemas["summarization"],
             }
 
-            response = await self.router.acompletion(
+            response = await self._direct_completion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 response_format=summarization_response_format,
