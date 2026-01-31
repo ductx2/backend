@@ -1,0 +1,12 @@
+{"articles": [
+    {"title": "RBI announces new monetary policy", "content": "Reserve Bank of India announced interest rate changes affecting inflation and economic growth.", "source": "Test", "source_url": "http://test.com/1"},
+    {"title": "India-China border talks resume", "content": "Diplomatic talks between India and China resumed after months of standoff at LAC.", "source": "Test", "source_url": "http://test.com/2"},
+    {"title": "ISRO launches new satellite", "content": "Indian Space Research Organisation successfully launches communication satellite for rural connectivity.", "source": "Test", "source_url": "http://test.com/3"},
+    {"title": "New education policy implementation", "content": "Government announces timeline for implementing National Education Policy 2020 in all states.", "source": "Test", "source_url": "http://test.com/4"},
+    {"title": "Climate change summit in Delhi", "content": "India hosts international climate conference discussing carbon emissions and renewable energy.", "source": "Test", "source_url": "http://test.com/5"},
+    {"title": "Supreme Court verdict on Article 370", "content": "Supreme Court delivers landmark judgment on the constitutional validity of Article 370 abrogation.", "source": "Test", "source_url": "http://test.com/6"},
+    {"title": "GST Council meeting decisions", "content": "GST Council decides to reduce rates on essential items and increase compliance measures.", "source": "Test", "source_url": "http://test.com/7"},
+    {"title": "India signs FTA with EFTA", "content": "India signs Free Trade Agreement with European Free Trade Association for economic cooperation.", "source": "Test", "source_url": "http://test.com/8"},
+    {"title": "Digital India initiative expansion", "content": "Government expands Digital India initiative to cover rural broadband and digital literacy.", "source": "Test", "source_url": "http://test.com/9"},
+    {"title": "Parliament passes new labor codes", "content": "Parliament passes four new labor codes consolidating 29 existing labor laws.", "source": "Test", "source_url": "http://test.com/10"}
+]}

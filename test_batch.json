@@ -1,0 +1,5 @@
+{"articles": [
+    {"title": "RBI announces new monetary policy", "content": "Reserve Bank of India announced interest rate changes affecting inflation.", "source": "Test", "source_url": "http://test.com/1"},
+    {"title": "India-China border talks resume", "content": "Diplomatic talks between India and China resumed after months of standoff.", "source": "Test", "source_url": "http://test.com/2"},
+    {"title": "ISRO launches new satellite", "content": "Indian Space Research Organisation successfully launches communication satellite.", "source": "Test", "source_url": "http://test.com/3"}
+]}

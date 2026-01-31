@@ -559,9 +559,14 @@ class OptimizedRSSProcessor:
                 else:
                     fallback_relevance = 0
 
+                # Use enhanced HTML content if available, otherwise fall back to raw content
+                content_to_use = ai_analysis.get("enhanced_content", article["content"])
+                if not content_to_use or len(content_to_use.strip()) < 50:
+                    content_to_use = article["content"]
+
                 processed_article = ProcessedArticle(
                     title=article["title"],
-                    content=article["content"],
+                    content=content_to_use,
                     summary=ai_analysis.get(
                         "summary", article["content"][:200] + "..."
                     ),
@@ -609,7 +614,7 @@ class OptimizedRSSProcessor:
             return fallback_articles
 
     def _create_batch_analysis_prompt(self, articles: List[Dict]) -> str:
-        """Create optimized prompt for batch AI analysis"""
+        """Create optimized prompt for batch AI analysis with HTML content generation"""
 
         articles_text = ""
         for article in articles:
@@ -621,11 +626,11 @@ Content: {article["content"]}
 ---
 """
 
-        return f"""You are an expert UPSC Civil Services examination analyst. Analyze these articles for UPSC relevance and provide structured output.
+        return f"""You are an expert UPSC Civil Services examination analyst. Analyze these articles for UPSC relevance and generate well-structured HTML content for each.
 
 {articles_text}
 
-For each article, provide analysis in this JSON format:
+For each article, provide analysis AND enhanced HTML content in this JSON format:
 {{
   "0": {{
     "upsc_relevance": <number 0-100>,
@@ -634,15 +639,37 @@ For each article, provide analysis in this JSON format:
     "importance": "<string: high|medium|low>",
     "tags": ["<relevant UPSC topics>"],
     "summary": "<150-200 char UPSC-focused summary>",
+    "enhanced_content": "<HTML formatted content - see format below>",
     "reasoning": "<why this score was given>"
   }},
   "1": {{ ... }},
   ...
 }}
 
+ENHANCED_CONTENT FORMAT (REQUIRED HTML STRUCTURE):
+<h2>Overview</h2>
+<p>Opening paragraph with <strong>key entities</strong>, <strong>dates</strong>, and <strong>important terms</strong> highlighted. Provide context and significance of the news.</p>
+
+<h3>Key Developments</h3>
+<ul>
+  <li><strong>Point 1:</strong> First key development or fact from the article.</li>
+  <li><strong>Point 2:</strong> Second key development or fact.</li>
+  <li><strong>Point 3:</strong> Third key development if applicable.</li>
+</ul>
+
+<h3>UPSC Relevance</h3>
+<p>How this topic connects to UPSC syllabus and potential exam questions.</p>
+
+IMPORTANT HTML RULES:
+1. Use <strong> tags for: names, organizations, policies, acts, dates, statistics
+2. Use <h2> for Overview, <h3> for subsections
+3. Use <ul><li> for bullet points
+4. Use <p> for paragraphs
+5. Keep enhanced_content between 200-400 words
+
 SCORING GUIDELINES:
 - 80-100: Directly relevant to UPSC syllabus, high exam probability
-- 60-79: Important for UPSC preparation, medium exam probability  
+- 60-79: Important for UPSC preparation, medium exam probability
 - 40-59: Background knowledge, low exam probability
 - 0-39: Not relevant for UPSC
 
