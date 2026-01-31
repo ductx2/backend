@@ -160,16 +160,10 @@ class CentralizedLLMService:
                 load_dotenv(main_env_file)
                 logger.info(f"✅ Loaded environment variables from {main_env_file}")
 
-            # Try to load from YAML configuration first
-            config_path = (
-                Path(__file__).parent.parent.parent / "config" / "litellm_config.yaml"
-            )
-            if config_path.exists():
-                logger.info(f"📁 Found YAML config at {config_path}")
-                await self._initialize_yaml_router(config_path)
-            else:
-                logger.warning("YAML config not found, using basic router")
-                await self._initialize_basic_router()
+            # Use basic router directly (more reliable on Render)
+            # YAML config env var resolution was unreliable
+            logger.info("🔧 Initializing basic router with Vercel AI Gateway")
+            await self._initialize_basic_router()
 
         except Exception as e:
             logger.error(f"Failed to initialize LiteLLM router: {e}")
@@ -218,7 +212,7 @@ class CentralizedLLMService:
             raise
 
     async def _initialize_basic_router(self):
-        """Fallback basic router initialization - VERCEL AI GATEWAY + GPT-OSS-120B
+        """Basic router initialization - VERCEL AI GATEWAY + GPT-OSS-120B
 
         Using Vercel AI Gateway with GPT-OSS-120B (Cerebras):
         - Ultra-fast inference: 3000 tokens/sec
@@ -227,13 +221,21 @@ class CentralizedLLMService:
         """
         from litellm import Router
 
-        api_key = os.environ.get("VERCEL_AI_GATEWAY_API_KEY") or os.environ.get(
-            "AI_GATEWAY_API_KEY"
-        )
-        if not api_key:
-            raise ValueError(
-                "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
-            )
+        # Check for API key with detailed logging
+        api_key = os.environ.get("VERCEL_AI_GATEWAY_API_KEY")
+        if api_key:
+            logger.info(f"✅ Found VERCEL_AI_GATEWAY_API_KEY (length: {len(api_key)})")
+        else:
+            api_key = os.environ.get("AI_GATEWAY_API_KEY")
+            if api_key:
+                logger.info(f"✅ Found AI_GATEWAY_API_KEY (length: {len(api_key)})")
+            else:
+                # List available env vars for debugging (without values)
+                llm_related_vars = [k for k in os.environ.keys() if 'KEY' in k.upper() or 'API' in k.upper() or 'GATEWAY' in k.upper()]
+                logger.error(f"❌ No API key found. Available related env vars: {llm_related_vars}")
+                raise ValueError(
+                    "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
+                )
 
         model_list = [
             {
