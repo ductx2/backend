@@ -1,27 +1,27 @@
 # LiteLLM Router Configuration for UPSC Backend
-# Using Vercel AI Gateway with DeepSeek V3.2
+# Using Vercel AI Gateway with GPT-OSS-120B (Cerebras)
 # Provider: Vercel AI Gateway (https://ai-gateway.vercel.sh/v1)
-# Model: DeepSeek V3.2 ($0.27/M input, $0.40/M output)
+# Model: GPT-OSS-120B ($0.25/M input, $0.69/M output)
 #
 # Benefits:
-# - 21x cheaper than Gemini 2.5 Flash
+# - 10x faster than DeepSeek (3,000 tok/s via Cerebras)
 # - Full structured output support (JSON Schema)
 # - Built-in fallbacks and load balancing
 # - No markup on tokens
 # - Spend monitoring included
 #
-# Updated: 2025-01-30
+# Updated: 2026-01-31
 
 model_list:
-  # DeepSeek V3.2 via Vercel AI Gateway
+  # GPT-OSS-120B via Vercel AI Gateway (Cerebras backend)
   # OpenAI-compatible API format
-  - model_name: deepseek-v3.2
+  - model_name: gpt-oss-120b
     litellm_params:
-      model: openai/deepseek-v3.2
+      model: openai/gpt-oss-120b
       api_key: os.environ/VERCEL_AI_GATEWAY_API_KEY
       base_url: 'https://ai-gateway.vercel.sh/v1'
       rpm: 100 # Rate limit: 100 requests per minute
-      timeout: 60
+      timeout: 120
       supports_function_calling: true
       supports_vision: false
 
@@ -34,7 +34,7 @@ router_settings:
   enable_pre_call_checks: true
 
 general_settings:
-  completion_model: deepseek-v3.2
+  completion_model: gpt-oss-120b
   disable_spend_logs: false
 
 litellm_settings:
