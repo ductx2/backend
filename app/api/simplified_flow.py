@@ -619,7 +619,7 @@ def prepare_article_for_database(article: Dict[str, Any]) -> Dict[str, Any]:
         "category": category,
         "tags": ai_analysis.get("key_topics", []),
         "importance": ai_analysis.get("importance_level", "medium").lower(),
-        "gs_paper": ", ".join(ai_analysis.get("relevant_papers", [])) or None,
+        "gs_paper": (ai_analysis.get("relevant_papers", []) or [None])[0],
         "key_vocabulary": ai_analysis.get("key_vocabulary", []),  # Technical terms with definitions
         "ai_summary": ai_refinement.get("detailed_summary", ""),
         "content_hash": content_hash,
