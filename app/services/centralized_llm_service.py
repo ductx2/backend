@@ -36,6 +36,60 @@ def strip_markdown_json(text: str) -> str:
     return text
 
 
+def validate_summarization_response(data: dict) -> tuple[bool, str]:
+    """Validate that summarization response contains actual content, not schema definitions.
+
+    This prevents corrupted articles where the LLM returns JSON schema definitions
+    like {"type": "string"} instead of actual content.
+
+    Returns:
+        tuple[bool, str]: (is_valid, error_message)
+    """
+    # Check required fields exist
+    required_fields = ["generated_title", "enhanced_content", "brief_summary"]
+    for field in required_fields:
+        if field not in data:
+            return False, f"Missing required field: {field}"
+
+    # Detect schema-like responses (LLM returned schema instead of content)
+    schema_patterns = [
+        '{"type"',
+        '"type":"string"',
+        '"type": "string"',
+        '{"type":"',
+    ]
+
+    title = str(data.get("generated_title", ""))
+    content = str(data.get("enhanced_content", ""))
+    summary = str(data.get("brief_summary", ""))
+
+    for pattern in schema_patterns:
+        if pattern in title or title.strip().startswith("{"):
+            return False, f"generated_title contains schema definition: {title[:100]}"
+        if pattern in summary or summary.strip().startswith("{"):
+            return False, f"brief_summary contains schema definition: {summary[:100]}"
+
+    # Validate minimum content length
+    if len(title.strip()) < 10:
+        return False, f"generated_title too short: {len(title)} chars"
+    if len(content.strip()) < 50:
+        return False, f"enhanced_content too short: {len(content)} chars"
+    if len(summary.strip()) < 20:
+        return False, f"brief_summary too short: {len(summary)} chars"
+
+    # Validate title doesn't look like JSON
+    title_stripped = title.strip()
+    if title_stripped.startswith("{") or title_stripped.startswith("["):
+        return False, f"generated_title looks like JSON: {title[:100]}"
+
+    # Validate content has some HTML structure (expected format)
+    if "<" not in content and ">" not in content:
+        # Content should have HTML tags - warn but don't reject
+        logger.warning(f"enhanced_content has no HTML tags - may be malformed")
+
+    return True, ""
+
+
 class CentralizedLLMService:
     def __init__(self):
         self.api_key = None
@@ -233,8 +287,16 @@ class CentralizedLLMService:
                 logger.info(f"✅ Found AI_GATEWAY_API_KEY (length: {len(api_key)})")
             else:
                 # List available env vars for debugging (without values)
-                llm_related_vars = [k for k in os.environ.keys() if 'KEY' in k.upper() or 'API' in k.upper() or 'GATEWAY' in k.upper()]
-                logger.error(f"❌ No API key found. Available related env vars: {llm_related_vars}")
+                llm_related_vars = [
+                    k
+                    for k in os.environ.keys()
+                    if "KEY" in k.upper()
+                    or "API" in k.upper()
+                    or "GATEWAY" in k.upper()
+                ]
+                logger.error(
+                    f"❌ No API key found. Available related env vars: {llm_related_vars}"
+                )
                 raise ValueError(
                     "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
                 )
@@ -284,7 +346,7 @@ class CentralizedLLMService:
         start_time = time.time()
 
         # Initialize if not done
-        if not hasattr(self, 'api_key') or self.api_key is None:
+        if not hasattr(self, "api_key") or self.api_key is None:
             await self.initialize_router()
 
         try:
@@ -370,7 +432,13 @@ class CentralizedLLMService:
 
             response = await self._direct_completion(
                 model=model,
-                messages=[{"role": "user", "content": prompt + "\n\nReturn ONLY valid JSON, no other text."}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                        + "\n\nReturn ONLY valid JSON, no other text.",
+                    }
+                ],
                 response_format=content_extraction_response_format,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
@@ -476,7 +544,16 @@ class CentralizedLLMService:
                 },
                 "category": {
                     "type": "string",
-                    "enum": ["politics", "economy", "international", "science", "environment", "society", "defence", "schemes"],
+                    "enum": [
+                        "politics",
+                        "economy",
+                        "international",
+                        "science",
+                        "environment",
+                        "society",
+                        "defence",
+                        "schemes",
+                    ],
                 },
                 "key_vocabulary": {
                     "type": "array",
@@ -653,8 +730,18 @@ Title requirements:
             # Parse structured response - strip markdown and parse
             clean_json = strip_markdown_json(response.choices[0].message.content)
             result_data = json.loads(clean_json)
+
+            # Validate response contains actual content, not schema definitions
+            is_valid, error_msg = validate_summarization_response(result_data)
+            if not is_valid:
+                logger.error(
+                    f"[REJECTED] Summarization response failed validation: {error_msg}"
+                )
+                logger.error(f"[REJECTED] Raw response: {clean_json[:500]}")
+                raise ValueError(f"LLM returned invalid content: {error_msg}")
+
             logger.info(
-                f"[OK] [Summarization] Structured response received from {response.model}"
+                f"[OK] [Summarization] Validated response received from {response.model}"
             )
 
             return {
