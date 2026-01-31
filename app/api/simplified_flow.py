@@ -121,7 +121,7 @@ async def step2_analyze_relevance(
                 content=f"Title: {article.get('title', '')}\nContent: {article.get('content', '')}",
                 provider_preference=ProviderPreference.COST_OPTIMIZED,
                 temperature=0.1,
-                max_tokens=500,
+                max_tokens=1500,  # Increased to avoid JSON truncation with key_vocabulary
             )
 
             # Process through centralized LLM service
@@ -275,14 +275,14 @@ async def step4_refine_content(
             content = article.get("extracted_content", {}).get("content", "")
 
             if content:
-                # Create LLM request for content refinement
+                # Create LLM request for content refinement with HTML formatting
                 llm_request = LLMRequest(
                     task_type=TaskType.SUMMARIZATION,
                     content=content,
                     provider_preference=ProviderPreference.QUALITY_OPTIMIZED,
-                    temperature=0.2,
-                    max_tokens=800,
-                    custom_instructions="Create UPSC-focused summary with key points and exam relevance",
+                    temperature=0.3,
+                    max_tokens=2000,
+                    custom_instructions="Generate well-structured HTML content with Overview, Key Developments, Important Facts, UPSC Relevance sections. Use proper HTML tags.",
                 )
 
                 # Process through centralized LLM service
@@ -430,9 +430,16 @@ async def complete_pipeline(
 
         # Step 3: Extract content (from top 20 relevant articles)
         top_articles = relevant_articles[:20]  # Limit for performance
+
+        # Create a map of url -> ai_analysis for merging later
+        ai_analysis_map = {
+            a.get("source_url", a.get("url", "")): a.get("ai_analysis", {})
+            for a in top_articles
+        }
+
         extraction_request_data = {
             "selected_articles": [
-                {"title": a["title"], "url": a["source_url"]} for a in top_articles
+                {"title": a["title"], "url": a.get("source_url", a.get("url", ""))} for a in top_articles
             ]
         }
         step3_response = await step3_extract_content(extraction_request_data, user)
@@ -442,6 +449,12 @@ async def complete_pipeline(
         refinement_request = RefinementRequest(articles=extracted_articles)
         step4_response = await step4_refine_content(refinement_request, user)
         refined_articles = step4_response["data"]["refined_articles"]
+
+        # CRITICAL: Merge ai_analysis back into refined articles before saving
+        for article in refined_articles:
+            url = article.get("url", article.get("source_url", ""))
+            if url in ai_analysis_map:
+                article["ai_analysis"] = ai_analysis_map[url]
 
         # Step 5: Save to database
         save_request = SaveRequest(processed_articles=refined_articles)
@@ -575,6 +588,15 @@ def prepare_article_for_database(article: Dict[str, Any]) -> Dict[str, Any]:
         # Fallback to current date if parsing fails
         date_field = datetime.utcnow().date().isoformat()
 
+    # Get category directly from AI analysis, fallback to mapping from key_topics
+    category = ai_analysis.get("category")
+    if not category:
+        category = map_to_proper_category(
+            ai_analysis.get("key_topics", ["general"])[0]
+            if ai_analysis.get("key_topics")
+            else "general"
+        )
+
     return {
         "title": (
             ai_refinement.get("generated_title")  # AI-generated title (priority 1)
@@ -594,14 +616,11 @@ def prepare_article_for_database(article: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "date": date_field,  # Add required date field
         "upsc_relevance": ai_analysis.get("upsc_relevance", 50),
-        "category": map_to_proper_category(
-            ai_analysis.get("key_topics", ["general"])[0]
-            if ai_analysis.get("key_topics")
-            else "general"
-        ),
+        "category": category,
         "tags": ai_analysis.get("key_topics", []),
         "importance": ai_analysis.get("importance_level", "medium").lower(),
         "gs_paper": ", ".join(ai_analysis.get("relevant_papers", [])) or None,
+        "key_vocabulary": ai_analysis.get("key_vocabulary", []),  # Technical terms with definitions
         "ai_summary": ai_refinement.get("detailed_summary", ""),
         "content_hash": content_hash,
         "created_at": datetime.utcnow().isoformat(),

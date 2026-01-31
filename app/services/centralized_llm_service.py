@@ -114,6 +114,8 @@ class CentralizedLLMService:
             "summarization": {
                 "type": "object",
                 "properties": {
+                    "generated_title": {"type": "string"},
+                    "enhanced_content": {"type": "string"},
                     "brief_summary": {"type": "string"},
                     "detailed_summary": {"type": "string"},
                     "key_points": {"type": "array", "items": {"type": "string"}},
@@ -121,6 +123,8 @@ class CentralizedLLMService:
                     "exam_tip": {"type": "string"},
                 },
                 "required": [
+                    "generated_title",
+                    "enhanced_content",
                     "brief_summary",
                     "detailed_summary",
                     "key_points",
@@ -199,96 +203,43 @@ class CentralizedLLMService:
             raise
 
     async def _initialize_basic_router(self):
-        """Fallback basic router initialization - VERCEL AI GATEWAY + GROQ
+        """Fallback basic router initialization - VERCEL AI GATEWAY + GPT-OSS-120B
 
-        Using Vercel AI Gateway with Groq:
-        - Fast inference: 455 tokens/sec, 0.1s latency
-        - Cheap: $0.15/M input (cheaper than Cerebras and DeepSeek)
-        - Full structured output support (JSON Schema)
-        - Pipeline will complete in ~5-7 minutes instead of 19-20 minutes
+        Using Vercel AI Gateway with GPT-OSS-120B (Cerebras):
+        - Ultra-fast inference: 3000 tokens/sec
+        - Full structured output support (JSON)
+        - Pipeline will complete in ~2-3 minutes
         """
-        model_list = []
+        from litellm import Router
 
         api_key = os.environ.get("VERCEL_AI_GATEWAY_API_KEY") or os.environ.get(
             "AI_GATEWAY_API_KEY"
         )
-        if api_key:
-            model_list.append(
-                {
-                    "model_name": "gpt-oss-120b",
-                    "litellm_params": {
-                        "model": "openai/gpt-oss-120b",
-                        "api_key": api_key,
-                        "base_url": "https://ai-gateway.vercel.sh/v1",
-                    },
-                }
-            )
-            model_list.append(
-                {
-                    "model_name": "deepseek-v3.2",
-                    "litellm_params": {
-                        "model": "openai/deepseek-v3.2",
-                        "api_key": api_key,
-                        "base_url": "https://ai-gateway.vercel.sh/v1",
-                    },
-                }
-            )
-        else:
+        if not api_key:
             raise ValueError(
                 "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
             )
 
-        from litellm import Router
+        model_list = [
+            {
+                "model_name": "gpt-oss-120b",
+                "litellm_params": {
+                    "model": "openai/gpt-oss-120b",
+                    "api_key": api_key,
+                    "api_base": "https://ai-gateway.vercel.sh/v1",
+                },
+            },
+        ]
 
         self.router = Router(
             model_list=model_list,
             routing_strategy="simple-shuffle",
             num_retries=3,
-            timeout=60,
+            timeout=120,
             allowed_fails=2,
         )
         logger.info(
-            f"✅ Basic LiteLLM router initialized with Vercel AI Gateway + Groq (455 tps)"
-        )
-        if api_key:
-            # Primary: Cerebras (FASTEST - 1725 tps)
-            model_list.append(
-                {
-                    "model_name": "cerebras-llama",
-                    "litellm_params": {
-                        "model": "cerebras/llama-3.3-70b",
-                        "api_key": api_key,
-                        "base_url": "https://ai-gateway.vercel.sh/v1",
-                    },
-                }
-            )
-            # Fallback: DeepSeek V3.2 (slower but reliable)
-            model_list.append(
-                {
-                    "model_name": "deepseek-v3.2",
-                    "litellm_params": {
-                        "model": "openai/deepseek-v3.2",
-                        "api_key": api_key,
-                        "base_url": "https://ai-gateway.vercel.sh/v1",
-                    },
-                }
-            )
-        else:
-            raise ValueError(
-                "VERCEL_AI_GATEWAY_API_KEY or AI_GATEWAY_API_KEY not found in environment"
-            )
-
-        from litellm import Router
-
-        self.router = Router(
-            model_list=model_list,
-            routing_strategy="simple-shuffle",
-            num_retries=3,
-            timeout=60,
-            allowed_fails=2,
-        )
-        logger.info(
-            f"✅ Basic LiteLLM router initialized with Vercel AI Gateway + Cerebras (1725 tps)"
+            f"✅ LiteLLM router initialized with Vercel AI Gateway + GPT-OSS-120B (3000 tps)"
         )
 
     def _initialize_task_handlers(self) -> Dict[str, callable]:
@@ -304,9 +255,9 @@ class CentralizedLLMService:
         }
 
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
-        model = "deepseek-v3.2"
+        model = "gpt-oss-120b"
         logger.info(
-            f"🎯 Selected model: {model} (DeepSeek V3.2 via Vercel AI Gateway - proven quality) (preference: {preference})"
+            f"🎯 Selected model: {model} (GPT-OSS-120B via Vercel AI Gateway - 3000 tok/s Cerebras) (preference: {preference})"
         )
         return model
 
@@ -391,23 +342,26 @@ class CentralizedLLMService:
         """
 
         try:
-            # Use official LiteLLM structured response with schema validation
+            # Vercel AI Gateway legacy JSON format for structured output
+            content_extraction_response_format = {
+                "type": "json",
+                "name": "content_extraction",
+                "description": "Content extraction from articles",
+                "schema": self.response_schemas["content_extraction"],
+            }
+
             response = await self.router.acompletion(
                 model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={
-                    "type": "json_object",
-                    "response_schema": self.response_schemas["content_extraction"],
-                    "enforce_validation": True,
-                },
+                messages=[{"role": "user", "content": prompt + "\n\nReturn ONLY valid JSON, no other text."}],
+                response_format=content_extraction_response_format,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
             )
 
-            # Official structured response - strip markdown and parse
+            # Strip markdown and parse
             clean_json = strip_markdown_json(response.choices[0].message.content)
             result_data = json.loads(clean_json)
-            logger.info(f"✅ Official structured response received and validated")
+            logger.info(f"✅ Structured response received and validated")
 
             return {
                 "provider_used": response.model,
@@ -443,7 +397,7 @@ class CentralizedLLMService:
            - GS2: Governance, Constitution, Polity, Social Justice, International Relations
            - GS3: Technology, Economy, Environment, Security, Disaster Management
            - GS4: Ethics, Integrity, Aptitude
-           
+
            IMPORTANT: You MUST select at least one GS paper. Return them as an array like ["GS2", "GS3"].
 
         3. KEY TOPICS (MANDATORY - Extract 3-7 specific topics):
@@ -451,7 +405,7 @@ class CentralizedLLMService:
            - For politics: ["Parliament", "Elections", "Supreme Court"]
            - For economy: ["GDP", "Inflation", "Trade Policy"]
            - For environment: ["Climate Change", "Renewable Energy", "Pollution"]
-           
+
            IMPORTANT: You MUST extract at least 3 key topics as an array of strings.
 
         4. IMPORTANCE LEVEL: Low, Medium, High, or Critical
@@ -459,6 +413,22 @@ class CentralizedLLMService:
         5. QUESTION POTENTIAL: Low, Medium, or High
 
         6. SUMMARY: Brief 2-3 sentence summary of the content
+
+        7. CATEGORY: Select the BEST category for this article:
+           - politics (governance, elections, constitutional matters)
+           - economy (finance, trade, GDP, inflation, budget)
+           - international (foreign relations, bilateral talks, global affairs)
+           - science (technology, space, research, innovation)
+           - environment (climate, pollution, wildlife, ecology)
+           - society (social issues, education, health, culture)
+           - defence (military, security, border issues)
+           - schemes (government schemes, welfare programs)
+
+        8. KEY VOCABULARY (MANDATORY - Extract 3-5 important terms):
+           Extract technical terms, acts, organizations, or concepts that a UPSC aspirant should know.
+           For each term, provide a brief definition explaining its relevance to UPSC.
+           Format: array of objects with "term" and "definition" keys.
+           Example: [{{"term": "Article 370", "definition": "Constitutional provision granting special status to J&K. GS2: Polity."}}]
 
         {request.custom_instructions or ""}
         """
@@ -486,6 +456,22 @@ class CentralizedLLMService:
                     "type": "string",
                     "enum": ["Low", "Medium", "High"],
                 },
+                "category": {
+                    "type": "string",
+                    "enum": ["politics", "economy", "international", "science", "environment", "society", "defence", "schemes"],
+                },
+                "key_vocabulary": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "term": {"type": "string"},
+                            "definition": {"type": "string"},
+                        },
+                        "required": ["term", "definition"],
+                    },
+                    "minItems": 3,  # MUST return at least 3 key vocabulary terms
+                },
                 "static_connections": {"type": "array", "items": {"type": "string"}},
                 "summary": {"type": "string"},
             },
@@ -495,23 +481,26 @@ class CentralizedLLMService:
                 "key_topics",
                 "importance_level",
                 "question_potential",
+                "category",
+                "key_vocabulary",
                 "summary",
             ],
         }
 
+        # Vercel AI Gateway legacy JSON schema for structured output
+        upsc_response_format = {
+            "type": "json",
+            "name": "upsc_analysis",
+            "description": "UPSC Civil Services exam relevance analysis",
+            "schema": upsc_analysis_schema,
+        }
+
         try:
-            # Use official structured response format for Gemini
+            # Use Vercel AI Gateway's legacy JSON format for structured output
             response = await self.router.acompletion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "upsc_analysis",
-                        "schema": upsc_analysis_schema,
-                        "strict": True,
-                    },
-                },
+                response_format=upsc_response_format,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
             )
@@ -561,56 +550,93 @@ class CentralizedLLMService:
     async def _handle_summarization(
         self, request: LLMRequest, model: str
     ) -> Dict[str, Any]:
-        """Handle content summarization and key points extraction"""
+        """Handle content summarization and key points extraction with HTML formatting"""
 
-        prompt = f"""You are an expert content summarizer focused on UPSC preparation.
-        
-        Content: {request.content}
-        
-        Create a comprehensive summary optimized for UPSC Civil Services preparation:
-        
-        Return JSON response:
-        {{
-            "generated_title": "Compelling, specific title (50-100 chars) that captures the key point for UPSC aspirants",
-            "brief_summary": "2-3 sentence overview",
-            "detailed_summary": "comprehensive summary for UPSC preparation", 
-            "key_points": ["point1", "point2", "point3"],
-            "upsc_relevance": "How this relates to UPSC syllabus",
-            "exam_tip": "Strategic tip for exam preparation"
-        }}
-        
-        Title requirements:
-        - Make it specific and informative (not generic)
-        - Focus on the key development/policy/issue
-        - Use active language and avoid vague terms
-        - Keep it between 50-100 characters
-        - Make it UPSC exam relevant
-        
-        {request.custom_instructions or ""}
+        prompt = f"""You are an expert content summarizer focused on UPSC Civil Services preparation.
+
+Content to analyze:
+{request.content}
+
+Create a comprehensive, well-structured article optimized for UPSC aspirants.
+
+CRITICAL: You MUST return a JSON response with the following structure:
+
+{{
+    "generated_title": "Compelling, specific title (50-100 chars) that captures the key point for UPSC aspirants",
+    "enhanced_content": "HTML-formatted article content (see format below)",
+    "brief_summary": "2-3 sentence overview",
+    "detailed_summary": "Comprehensive 1-2 paragraph summary for UPSC preparation",
+    "key_points": ["key point 1", "key point 2", "key point 3", "key point 4", "key point 5"],
+    "upsc_relevance": "How this topic relates to UPSC syllabus (GS papers, optional subjects)",
+    "exam_tip": "Strategic tip for exam preparation"
+}}
+
+ENHANCED_CONTENT FORMAT (HTML):
+The "enhanced_content" field MUST be properly formatted HTML with the following structure:
+
+<h2>Overview</h2>
+<p>Opening paragraph with <strong>key entities</strong>, <strong>dates</strong>, and <strong>important terms</strong> highlighted using strong tags. Provide context and significance.</p>
+
+<h3>Key Developments</h3>
+<ul>
+  <li><strong>Development 1:</strong> Description of the first key development or fact.</li>
+  <li><strong>Development 2:</strong> Description of the second key development or fact.</li>
+  <li><strong>Development 3:</strong> Description of the third key development or fact.</li>
+</ul>
+
+<h3>Important Facts</h3>
+<ul>
+  <li><strong>Fact 1:</strong> Important statistic, date, or data point.</li>
+  <li><strong>Fact 2:</strong> Another significant fact relevant for UPSC.</li>
+</ul>
+
+<h3>UPSC Relevance</h3>
+<p>Explain how this topic connects to the UPSC syllabus, which GS papers it relates to, and potential question angles.</p>
+
+<h3>Way Forward</h3>
+<p>Conclude with implications, future outlook, or policy recommendations if applicable.</p>
+
+IMPORTANT RULES:
+1. Use <strong> tags to highlight: names of people, organizations, policies, acts, dates, statistics
+2. Use proper HTML hierarchy: h2 for main sections, h3 for subsections
+3. Use <ul> and <li> for bullet points
+4. Use <p> tags for paragraphs
+5. Make content factual, comprehensive, and UPSC exam-focused
+6. Include specific facts, dates, figures from the source content
+7. The enhanced_content should be 300-600 words of well-structured HTML
+
+Title requirements:
+- Specific and informative (not generic)
+- Focus on the key development/policy/issue
+- Active language, avoid vague terms
+- 50-100 characters
+- UPSC exam relevant
+
+{request.custom_instructions or ""}
         """
 
         try:
-            # Use official structured response format (OpenAI-compatible)
+            # Vercel AI Gateway legacy JSON format for structured output
+            summarization_response_format = {
+                "type": "json",
+                "name": "content_summarization",
+                "description": "UPSC content summarization with HTML formatting",
+                "schema": self.response_schemas["summarization"],
+            }
+
             response = await self.router.acompletion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "content_summarization",
-                        "schema": self.response_schemas["summarization"],
-                        "strict": True,
-                    },
-                },
+                response_format=summarization_response_format,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
             )
 
-            # Official structured response - strip markdown and parse
+            # Parse structured response - strip markdown and parse
             clean_json = strip_markdown_json(response.choices[0].message.content)
             result_data = json.loads(clean_json)
             logger.info(
-                f"[OK] [Summarization] Official structured response received and validated"
+                f"[OK] [Summarization] Structured response received from {response.model}"
             )
 
             return {

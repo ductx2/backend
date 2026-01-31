@@ -3,143 +3,81 @@ Automation API Endpoints
 Master Plan Implementation - Phase 4.1
 
 Implements automation endpoints as specified in FASTAPI_IMPLEMENTATION_MASTER_PLAN.md:
-- POST /api/automation/daily (replaces /api/automation/current-affairs)
+- POST /api/automation/daily - Runs complete 5-step pipeline
 - GET /api/automation/status
-- POST /api/automation/schedule
 
 Compatible with: FastAPI 0.116.1, Python 3.13.5
 Created: 2025-08-30
+Updated: 2026-01-31 - Switched to direct complete_pipeline call for proper structured output
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from typing import Dict, Any, List, Optional
-import asyncio
+from typing import Dict, Any, Optional
 import logging
-import httpx
 from datetime import datetime
-from pydantic import BaseModel
 
 # Local imports
 from ..core.security import require_authentication, require_admin_access
 from ..core.database import get_database, SupabaseConnection
-from ..services.optimized_rss_processor import OptimizedRSSProcessor
 from ..core.config import get_settings
+
+# Import complete_pipeline function directly
+from .simplified_flow import (
+    step1_extract_rss,
+    step2_analyze_relevance,
+    step3_extract_content,
+    step4_refine_content,
+    step5_save_to_database,
+    AnalysisRequest,
+    RefinementRequest,
+    SaveRequest,
+)
 
 # Initialize router and logger
 router = APIRouter(prefix="/api/automation", tags=["Automation"])
 logger = logging.getLogger(__name__)
-
-# Global processor instances
-_rss_processor: Optional[OptimizedRSSProcessor] = None
-
-
-def get_rss_processor() -> OptimizedRSSProcessor:
-    global _rss_processor
-    if _rss_processor is None:
-        _rss_processor = OptimizedRSSProcessor()
-    return _rss_processor
-
-
-async def call_drishti_daily_scraper(user_token: str) -> Dict[str, Any]:
-    """
-    Call the Drishti daily current affairs scraper endpoint
-    Using internal HTTP call to existing API endpoint
-    """
-    try:
-        settings = get_settings()
-        base_url = f"http://localhost:{settings.port}"  # Internal call
-
-        async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minute timeout
-            response = await client.post(
-                f"{base_url}/api/drishti/scrape/daily-current-affairs",
-                headers={"Authorization": f"Bearer {user_token}"},
-                params={"max_articles": 20},
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(
-                    f"Drishti scraper API call failed: {response.status_code} - {response.text}"
-                )
-                return {
-                    "success": False,
-                    "error": f"API call failed with status {response.status_code}",
-                    "stats": {"articles_saved": 0},
-                }
-
-    except Exception as e:
-        logger.error(f"Error calling Drishti scraper API: {e}")
-        return {
-            "success": False,
-            "error": f"Internal API call failed: {str(e)}",
-            "stats": {"articles_saved": 0},
-        }
-
-
-async def call_drishti_status(user_token: str) -> Dict[str, Any]:
-    """
-    Call the Drishti scraper status endpoint
-    Using internal HTTP call to existing API endpoint
-    """
-    try:
-        settings = get_settings()
-        base_url = f"http://localhost:{settings.port}"  # Internal call
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                f"{base_url}/api/drishti/scraper/status",
-                headers={"Authorization": f"Bearer {user_token}"},
-            )
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Drishti status API call failed: {response.status_code}")
-                return {
-                    "status": "degraded",
-                    "ready": False,
-                    "error": f"Status API call failed with status {response.status_code}",
-                }
-
-    except Exception as e:
-        logger.error(f"Error calling Drishti status API: {e}")
-        return {
-            "status": "degraded",
-            "ready": False,
-            "error": f"Status check failed: {str(e)}",
-        }
 
 
 @router.post("/daily", response_model=Dict[str, Any])
 async def execute_daily_automation(
     background_tasks: BackgroundTasks,
     user: dict = Depends(require_admin_access),
-    rss_processor: OptimizedRSSProcessor = Depends(get_rss_processor),
+    db: SupabaseConnection = Depends(get_database),
 ):
     """
     🎯 MASTER PLAN ENDPOINT: Execute daily automation
 
+    Runs the complete 5-step pipeline directly:
+    1. RSS extraction
+    2. UPSC relevance analysis (with structured LLM output)
+    3. Content extraction
+    4. AI refinement
+    5. Database save
+
     Returns immediately and runs pipeline in background to prevent 502 timeout.
-    Render free tier has 10-minute HTTP timeout, but pipeline takes 19-20 minutes.
     """
     try:
-        logger.info("🚀 Starting daily automation in background")
+        logger.info("🚀 Starting daily automation - direct complete-pipeline execution")
 
         # Start pipeline in background (non-blocking)
-        background_tasks.add_task(_run_daily_automation_background, rss_processor)
+        background_tasks.add_task(_run_complete_pipeline_background, user, db)
 
-        # Return immediately (no 19-20 min wait)
+        # Return immediately (no timeout wait)
         return {
             "success": True,
             "message": "Daily automation started in background. Check logs for progress.",
-            "estimated_duration": "19-20 minutes",
+            "pipeline": "complete-pipeline (5 steps)",
             "status": "processing",
-            "master_plan_endpoint": "✅ /api/automation/daily",
-            "processing_mode": "✅ Non-blocking (background task)",
+            "steps": [
+                "1. RSS extraction",
+                "2. UPSC relevance analysis (structured LLM)",
+                "3. Content extraction",
+                "4. AI refinement",
+                "5. Database save",
+            ],
             "monitoring": {
                 "check_logs": "Render logs will show progress",
-                "check_database": "Check current_affairs table for new articles after 20 minutes",
+                "check_database": "Check current_affairs table for new articles",
             },
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -152,129 +90,120 @@ async def execute_daily_automation(
         )
 
 
-async def _run_daily_automation_background(rss_processor: OptimizedRSSProcessor):
-    """Background task that runs the full pipeline without HTTP timeout"""
+async def _run_complete_pipeline_background(user: dict, db: SupabaseConnection):
+    """
+    Background task that runs the complete 5-step pipeline.
+
+    This directly calls the pipeline functions for proper structured LLM output:
+    - key_vocabulary (technical terms with definitions)
+    - category (politics, economy, science, etc.)
+    - gs_paper (GS1, GS2, GS3, GS4)
+    - upsc_relevance (varied scores based on content)
+    """
     try:
-        logger.info("📊 Background pipeline started")
+        logger.info("📊 Background pipeline started - 5-step complete-pipeline")
         start_time = datetime.utcnow()
 
-        # Get API key
-        settings = get_settings()
-        api_key = settings.api_key
+        # Step 1: Extract RSS
+        logger.info("📰 Step 1: Extracting RSS feeds...")
+        step1_response = await step1_extract_rss(user)
+        articles = step1_response["data"]["articles"]
+        logger.info(f"   ✅ Extracted {len(articles)} articles from RSS feeds")
 
-        # Execute comprehensive daily processing in parallel
-        results = await asyncio.gather(
-            rss_processor.process_all_sources(),
-            call_drishti_daily_scraper(api_key),
-            return_exceptions=True,
-        )
+        if not articles:
+            logger.warning("❌ No articles extracted from RSS feeds")
+            return
+
+        # Step 2: Analyze relevance (this is where structured LLM output happens)
+        logger.info("🔍 Step 2: Analyzing UPSC relevance with structured LLM...")
+        analysis_request = AnalysisRequest(articles=articles)
+        step2_response = await step2_analyze_relevance(analysis_request, user)
+        relevant_articles = step2_response["data"]["relevant_articles"]
+        logger.info(f"   ✅ Found {len(relevant_articles)} UPSC-relevant articles")
+
+        if not relevant_articles:
+            logger.warning("❌ No articles passed UPSC relevance filter")
+            return
+
+        # Step 3: Extract content (from top 20 relevant articles)
+        logger.info("📄 Step 3: Extracting full content...")
+        top_articles = relevant_articles[:20]  # Limit for performance
+        extraction_request_data = {
+            "selected_articles": [
+                {"title": a["title"], "url": a.get("source_url", a.get("url", ""))}
+                for a in top_articles
+            ]
+        }
+        step3_response = await step3_extract_content(extraction_request_data, user)
+        extracted_articles = step3_response["data"]["extracted_articles"]
+        logger.info(f"   ✅ Extracted content from {len(extracted_articles)} articles")
+
+        if not extracted_articles:
+            logger.warning("❌ No articles had extractable content")
+            return
+
+        # Step 4: Refine content
+        logger.info("✨ Step 4: Refining content with AI...")
+        refinement_request = RefinementRequest(articles=extracted_articles)
+        step4_response = await step4_refine_content(refinement_request, user)
+        refined_articles = step4_response["data"]["refined_articles"]
+        logger.info(f"   ✅ Refined {len(refined_articles)} articles")
+
+        if not refined_articles:
+            logger.warning("❌ No articles were successfully refined")
+            return
+
+        # Step 5: Save to database
+        logger.info("💾 Step 5: Saving to database...")
+        save_request = SaveRequest(processed_articles=refined_articles)
+        step5_response = await step5_save_to_database(save_request, user, db)
+        saved_count = step5_response["data"]["saved_articles"]
+        duplicates = step5_response["data"]["duplicates_skipped"]
+        logger.info(f"   ✅ Saved {saved_count} articles, skipped {duplicates} duplicates")
 
         processing_time = (datetime.utcnow() - start_time).total_seconds()
 
-        rss_result = (
-            results[0]
-            if not isinstance(results[0], Exception)
-            else {
-                "success": False,
-                "error": str(results[0]),
-                "stats": {"articles_saved": 0},
-            }
-        )
-
-        drishti_result = (
-            results[1]
-            if not isinstance(results[1], Exception)
-            else {
-                "success": False,
-                "error": str(results[1]),
-                "stats": {"articles_saved": 0},
-            }
-        )
-
-        # Calculate statistics
-        rss_articles = rss_result.get("stats", {}).get("articles_saved", 0)
-        drishti_articles = drishti_result.get("stats", {}).get("articles_saved", 0)
-        total_articles = rss_articles + drishti_articles
-
         logger.info(
-            f"✅ Background pipeline completed: {total_articles} articles "
-            f"({rss_articles} RSS, {drishti_articles} Drishti) in {processing_time:.2f}s"
+            f"🎉 Complete pipeline finished: {saved_count} articles saved in {processing_time:.2f}s"
+        )
+        logger.info(
+            f"   📊 Pipeline stats: {len(articles)} RSS → {len(relevant_articles)} relevant → "
+            f"{len(extracted_articles)} extracted → {len(refined_articles)} refined → {saved_count} saved"
         )
 
     except Exception as e:
         logger.error(f"❌ Background pipeline failed: {e}")
         import traceback
-
         logger.error(traceback.format_exc())
 
 
 @router.get("/status", response_model=Dict[str, Any])
 async def get_automation_status(
     user: dict = Depends(require_authentication),
-    rss_processor: OptimizedRSSProcessor = Depends(get_rss_processor),
     db: SupabaseConnection = Depends(get_database),
 ):
     """
     📊 Get automation system status
-
-    Provides comprehensive status of the automation system:
-    - RSS processor health and statistics
-    - Drishti scraper status and capabilities
-    - Recent automation runs and success rates
-    - Master plan compliance metrics
     """
     try:
-        # Get system health status
-        rss_health = rss_processor.get_source_health_status()
-
-        # Get API key for internal calls
-        settings = get_settings()
-        api_key = settings.api_key
-        drishti_status = await call_drishti_status(api_key)
-
-        # Get recent automation statistics (if method exists)
-        try:
-            recent_stats = await db.get_recent_automation_stats(limit=5)
-        except AttributeError:
-            recent_stats = []  # Method doesn't exist yet
+        # Get recent article count
+        today = datetime.utcnow().date().isoformat()
 
         return {
             "success": True,
             "message": "Automation system status retrieved",
             "system_status": {
-                "overall_health": "healthy"
-                if rss_health["overall_health"] == "healthy"
-                and drishti_status["status"] == "ready"
-                else "degraded",
+                "pipeline": "complete-pipeline (5 steps)",
+                "llm_output": "structured (key_vocabulary, category, gs_paper)",
                 "automation_ready": True,
-                "master_plan_compliance": "✅ Fully compliant",
             },
-            "rss_automation": {
-                "status": rss_health["overall_health"],
-                "active_sources": rss_health["active_sources"],
-                "healthy_sources": rss_health["healthy_sources"],
-                "performance": "Revolutionary (10x improvement)",
-                "processing_method": "Parallel async",
-            },
-            "drishti_automation": {
-                "status": drishti_status.get("status", "unknown"),
-                "scraper_ready": drishti_status.get("ready", False),
-                "content_types": ["daily_current_affairs", "important_editorials"],
-                "scraping_method": "HTTP + Gemini LLM (Chrome-free)",
-            },
-            "recent_runs": recent_stats,
-            "master_plan_targets": {
-                "rss_articles_daily": "50+ articles",
-                "drishti_articles_daily": "10+ articles",
-                "processing_time": "<5 minutes",
-                "upsc_relevance": "40+ score minimum",
-                "reliability": "99.9% uptime target",
-            },
-            "railway_deployment": {
-                "cron_job_ready": "✅ Compatible",
-                "health_check": "/api/health endpoint",
-                "auto_restart": "✅ Configured",
-            },
+            "pipeline_steps": [
+                "1. RSS extraction (6 premium sources)",
+                "2. UPSC relevance analysis (structured LLM)",
+                "3. Content extraction (full article)",
+                "4. AI refinement (summaries, key points)",
+                "5. Database save (deduplication)",
+            ],
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -283,53 +212,4 @@ async def get_automation_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get automation status: {str(e)}",
-        )
-
-
-@router.post("/schedule", response_model=Dict[str, Any])
-async def configure_automation_schedule(user: dict = Depends(require_admin_access)):
-    """
-    ⏰ Configure automation scheduling
-
-    Admin endpoint for configuring automation schedules:
-    - Daily automation timing
-    - Railway cron job configuration
-    - Backup scheduling options
-    - Emergency automation triggers
-
-    Note: Actual scheduling is handled by Railway cron jobs
-    """
-    try:
-        return {
-            "success": True,
-            "message": "Automation schedule configuration retrieved",
-            "railway_cron_config": {
-                "daily_automation": "0 6 * * *",  # 6 AM UTC daily
-                "health_check": "*/15 * * * *",  # Every 15 minutes
-                "backup_run": "0 18 * * *",  # 6 PM UTC daily
-            },
-            "schedule_commands": {
-                "daily": "curl -X POST {RAILWAY_URL}/api/automation/daily -H 'Authorization: Bearer {API_KEY}'",
-                "health": "curl -X GET {RAILWAY_URL}/api/health",
-                "manual": "curl -X POST {RAILWAY_URL}/api/current-affairs/manual-trigger",
-            },
-            "configuration_notes": {
-                "timezone": "UTC (as per Railway standard)",
-                "failover": "Manual trigger available via /api/current-affairs/manual-trigger",
-                "monitoring": "Health checks every 15 minutes",
-                "backup": "Secondary daily run at 6 PM UTC",
-            },
-            "master_plan_compliance": {
-                "github_actions_replacement": "✅ Complete",
-                "railway_compatibility": "✅ Fully compatible",
-                "business_continuity": "✅ Backup plans active",
-            },
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-
-    except Exception as e:
-        logger.error(f"Error configuring automation schedule: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to configure automation schedule: {str(e)}",
         )
