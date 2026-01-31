@@ -100,13 +100,8 @@ class OptimizedRSSProcessor:
         self.db = get_database_sync()
 
         # Configure premium RSS sources (proven working from forensic analysis)
+        # DD News removed (persistent SSL/TLS connection failures)
         self.sources = [
-            PremiumRSSSource(
-                name="DD News - National",
-                url="https://ddnews.gov.in/en/feed/",
-                priority=1,
-                enabled=True,
-            ),
             PremiumRSSSource(
                 name="The Hindu - National",
                 url="https://www.thehindu.com/news/national/feeder/default.rss",
