@@ -38,3 +38,8 @@ nul
 pipeline_*.json
 *_result.json
 *_response.json
+test_*.json
+test_*.py
+
+# Claude Code local settings
+.claude/settings.local.json
