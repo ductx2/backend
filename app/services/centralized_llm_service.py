@@ -185,14 +185,29 @@ class CentralizedLLMService:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
-            # Initialize router with YAML config
+            # Resolve environment variables in model_list
+            model_list = config.get("model_list", [])
+            for model in model_list:
+                litellm_params = model.get("litellm_params", {})
+                api_key = litellm_params.get("api_key", "")
+                # Resolve os.environ/VARNAME syntax
+                if isinstance(api_key, str) and api_key.startswith("os.environ/"):
+                    env_var = api_key.replace("os.environ/", "")
+                    resolved_key = os.environ.get(env_var)
+                    if resolved_key:
+                        litellm_params["api_key"] = resolved_key
+                        logger.info(f"✅ Resolved API key from {env_var}")
+                    else:
+                        logger.warning(f"⚠️ Environment variable {env_var} not found")
+
+            # Initialize router with resolved config
             self.router = Router(
-                model_list=config.get("model_list", []),
+                model_list=model_list,
                 **config.get("router_settings", {}),
             )
 
             logger.info(
-                f"✅ LiteLLM router initialized from YAML config with {len(config.get('model_list', []))} models"
+                f"✅ LiteLLM router initialized from YAML config with {len(model_list)} models"
             )
             logger.info(
                 f"🔄 Round-robin strategy: {config.get('router_settings', {}).get('routing_strategy', 'default')}"
