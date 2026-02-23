@@ -125,9 +125,9 @@ async def _run_complete_pipeline_background(user: dict, db: SupabaseConnection):
             logger.warning("❌ No articles passed UPSC relevance filter")
             return
 
-        # Step 3: Extract content (from top 20 relevant articles)
+        # Step 3: Extract content (from top 30 relevant articles)
         logger.info("📄 Step 3: Extracting full content...")
-        top_articles = relevant_articles[:20]  # Limit for performance
+        top_articles = relevant_articles[:30]  # Limit for performance (raised from 20 to match 25-30 daily target)
         extraction_request_data = {
             "selected_articles": [
                 {"title": a["title"], "url": a.get("source_url", a.get("url", ""))}

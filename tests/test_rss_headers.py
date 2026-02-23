@@ -28,21 +28,6 @@ def test_get_optimized_headers_returns_user_agent_for_all_sources():
         print(f"OK: {source.name}: User-Agent applied correctly")
 
 
-def test_sources_list_contains_dd_news():
-    """Test that DD News is in sources list"""
-    processor = OptimizedRSSProcessor()
-
-    # Assert DD News exists
-    dd_news_sources = [s for s in processor.sources if "DD News" in s.name]
-    assert len(dd_news_sources) == 1, "DD News not found in sources"
-
-    # Assert DD News has correct URL
-    dd_news = dd_news_sources[0]
-    assert "ddnews.gov.in" in dd_news.url, "DD News has incorrect URL"
-
-    # Assert total source count is still 6
-    assert len(processor.sources) == 6, (
-        f"Expected 6 sources, got {len(processor.sources)}"
-    )
-
-    print("OK: DD News present in sources list")
+# REMOVED: test_sources_list_contains_dd_news
+# DD News was removed from sources (persistent SSL/TLS connection failures)
+# See optimized_rss_processor.py line 106 for removal comment

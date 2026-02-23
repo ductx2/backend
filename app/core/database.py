@@ -303,7 +303,7 @@ class SupabaseConnection:
         Get articles from specific source
         
         Args:
-            source: Source name (RSS source or 'drishti_ias')
+            source: Source name
             limit: Maximum number of articles
             
         Returns:
@@ -475,8 +475,6 @@ class SupabaseConnection:
             
             # Calculate statistics
             total_articles = len(articles)
-            total_rss_articles = len([a for a in articles if a.get("source", "").lower() != "drishti_ias"])
-            total_drishti_articles = len([a for a in articles if a.get("source", "").lower() == "drishti_ias"])
             
             # Calculate average relevance score
             relevance_scores = [a.get("upsc_relevance", 0) for a in articles if a.get("upsc_relevance")]
@@ -491,8 +489,6 @@ class SupabaseConnection:
             return {
                 "date": date_str,
                 "total_articles": total_articles,
-                "total_rss_articles": total_rss_articles,
-                "total_drishti_articles": total_drishti_articles,
                 "avg_relevance_score": round(avg_relevance_score, 2),
                 "source_breakdown": source_breakdown,
                 "high_relevance_count": len([a for a in articles if a.get("upsc_relevance", 0) >= 70]),
@@ -505,8 +501,6 @@ class SupabaseConnection:
             return {
                 "date": date.strftime("%Y-%m-%d"),
                 "total_articles": 0,
-                "total_rss_articles": 0,
-                "total_drishti_articles": 0,
                 "avg_relevance_score": 0,
                 "source_breakdown": {},
                 "high_relevance_count": 0,

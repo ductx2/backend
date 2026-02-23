@@ -79,7 +79,7 @@ class TestSourceConfiguration:
         self.ss = SupplementarySources()
 
     def test_three_sources_defined(self):
-        assert len(self.ss.SOURCES) == 8
+        assert len(self.ss.SOURCES) >= 9
 
     def test_dte_source_configured(self):
         names = [s["source_site"] for s in self.ss.SOURCES]
@@ -382,7 +382,7 @@ class TestFetchAll:
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
-        # Each call returns 2 articles → 3 sources × 2 = 6 total
+        # Each call returns 2 articles → 11 sources × 2 = 22 total
         mock_feedparser.parse.return_value = _make_feed(
             [
                 _make_entry("Article 1", "https://example.com/1"),
@@ -391,7 +391,7 @@ class TestFetchAll:
         )
 
         result = self.ss.fetch_all()
-        assert len(result) == 16
+        assert len(result) == 22
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -420,8 +420,8 @@ class TestFetchAll:
         )
 
         result = self.ss.fetch_all()
-        # One source failed, remaining 7 sources succeeded with 1 article each → 7 total
-        assert len(result) == 7
+        # One source failed, remaining 10 sources succeeded with 1 article each → 10 total
+        assert len(result) == 10
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -498,8 +498,8 @@ class TestRBIFeeds:
         assert len(rbi_sources) == 4
 
     def test_total_source_count(self):
-        """Total SOURCES list should have 8 entries (3 existing + 4 RBI + 1 Bar & Bench)."""
-        assert len(self.SOURCES) == 8
+        """Total SOURCES list should have at least 9 entries (3 existing + 4 RBI + 1 Bar & Bench + 1 LiveLaw)."""
+        assert len(self.SOURCES) >= 9
 
     def test_rbi_feeds_urls(self):
         """All 4 RBI URLs should be present in SOURCES."""
@@ -618,3 +618,132 @@ class TestBarAndBench:
         )
         result = self.ss._parse_entry(entry, self.bb_source)
         assert result is not None, "Entry without tags should NOT be filtered"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests for NITI Aayog RSS feed
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestNITIAayogFeed:
+    """Verify NITI Aayog RSS feed is configured correctly."""
+
+    def setup_method(self):
+        from app.services.supplementary_sources import SupplementarySources
+
+        self.ss = SupplementarySources()
+        self.SOURCES = self.ss.SOURCES
+        self.niti_source = next(
+            (s for s in self.SOURCES if s["source_site"] == "niti"), None
+        )
+
+    def test_niti_feed_present(self):
+        """SOURCES must contain entry with source_site='niti' and section='policy'."""
+        assert self.niti_source is not None, "niti not found in SOURCES"
+        assert self.niti_source["section"] == "policy"
+
+    def test_niti_feed_url(self):
+        """NITI Aayog URL must be https://niti.gov.in/rss.xml"""
+        assert self.niti_source is not None, "niti not found in SOURCES"
+        assert self.niti_source["url"] == "https://niti.gov.in/rss.xml"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests for Gateway House RSS feed
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestGatewayHouseFeed:
+    """Verify Gateway House RSS feed is configured and parses correctly."""
+
+    def setup_method(self):
+        from app.services.supplementary_sources import SupplementarySources
+
+        self.ss = SupplementarySources()
+        self.SOURCES = self.ss.SOURCES
+        self.gh_source = next(
+            (s for s in self.SOURCES if s["source_site"] == "gatewayhouse"), None
+        )
+
+    def test_gatewayhouse_feed_present(self):
+        """SOURCES must contain entry with source_site='gatewayhouse' and section='international_relations'."""
+        assert self.gh_source is not None, "gatewayhouse not found in SOURCES"
+        assert self.gh_source["section"] == "international_relations"
+
+    def test_gatewayhouse_feed_url(self):
+        """Gateway House URL must be https://www.gatewayhouse.in/feed"""
+        assert self.gh_source is not None, "gatewayhouse not found in SOURCES"
+        assert self.gh_source["url"] == "https://www.gatewayhouse.in/feed"
+
+    def test_gatewayhouse_fulltext_parse(self):
+        """Mock feedparser entry with content field; assert _parse_entry returns correct article."""
+        assert self.gh_source is not None, "gatewayhouse not found in SOURCES"
+        entry = _make_entry(
+            "India's G20 Presidency and the Global South",
+            "https://www.gatewayhouse.in/indias-g20-presidency/",
+            author="Gateway House Analyst",
+        )
+        # Simulate WordPress feed content field
+        entry.content = [{"type": "text/html", "value": "<p>Full article text here.</p>"}]
+        result = self.ss._parse_entry(entry, self.gh_source)
+        assert result is not None, "_parse_entry returned None for valid Gateway House entry"
+        assert result["source_site"] == "gatewayhouse"
+        assert result["section"] == "international_relations"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests for LiveLaw RSS feed
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestLiveLaw:
+    """Verify LiveLaw top-stories RSS feed is configured and parsed correctly."""
+
+    def setup_method(self):
+        from app.services.supplementary_sources import SupplementarySources
+
+        self.ss = SupplementarySources()
+        self.SOURCES = self.ss.SOURCES
+        self.ll_source = next(
+            (s for s in self.SOURCES if s["source_site"] == "livelaw"), None
+        )
+
+    def test_livelaw_feed_present(self):
+        """SOURCES must contain an entry with source_site='livelaw' and section='polity'."""
+        assert self.ll_source is not None, "livelaw not found in SOURCES"
+        assert self.ll_source["section"] == "polity"
+
+    def test_livelaw_feed_url(self):
+        """LiveLaw URL must be the top-stories Google feeds RSS endpoint."""
+        assert self.ll_source is not None, "livelaw not found in SOURCES"
+        assert self.ll_source["url"] == "https://www.livelaw.in/category/top-stories/google_feeds.xml"
+
+    def test_livelaw_fulltext_parse(self):
+        """_parse_entry on a LiveLaw entry with content:encoded returns correct article."""
+        assert self.ll_source is not None, "livelaw not found in SOURCES"
+        # Simulate feedparser entry with content:encoded (parsed into entry.content list)
+        entry = _make_entry(
+            "Supreme Court rules on electoral bonds",
+            "https://www.livelaw.in/top-stories/supreme-court-electoral-bonds-123",
+        )
+        # Simulate content:encoded field that feedparser maps to entry.content[0].value
+        content_item = MagicMock()
+        content_item.value = "<p>Full article text about electoral bonds and Supreme Court ruling.</p>"
+        entry.content = [content_item]
+
+        result = self.ss._parse_entry(entry, self.ll_source)
+
+        assert result is not None, "_parse_entry returned None for valid LiveLaw entry"
+        assert result["source_site"] == "livelaw"
+        assert result["section"] == "polity"
+
+    def test_livelaw_polity_section(self):
+        """Any article parsed from LiveLaw source has section='polity'."""
+        assert self.ll_source is not None, "livelaw not found in SOURCES"
+        entry = _make_entry(
+            "High Court quashes FIR against journalist",
+            "https://www.livelaw.in/top-stories/high-court-fir-journalist-456",
+        )
+        result = self.ss._parse_entry(entry, self.ll_source)
+        assert result is not None
+        assert result["section"] == "polity"

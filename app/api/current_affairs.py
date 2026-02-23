@@ -13,9 +13,7 @@ Created: 2025-08-30
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from typing import Dict, Any, List, Optional
-import asyncio
 import logging
-import httpx
 from datetime import datetime, date as date_type
 from pydantic import BaseModel
 
@@ -38,45 +36,11 @@ def get_rss_processor() -> OptimizedRSSProcessor:
         _rss_processor = OptimizedRSSProcessor()
     return _rss_processor
 
-async def call_drishti_daily_scraper(user_token: str) -> Dict[str, Any]:
-    """
-    Call the Drishti daily current affairs scraper endpoint
-    Using internal HTTP call to existing API endpoint
-    """
-    try:
-        settings = get_settings()
-        base_url = f"http://localhost:{settings.port}"  # Internal call
-        
-        async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minute timeout
-            response = await client.post(
-                f"{base_url}/api/drishti/scrape/daily-current-affairs",
-                headers={"Authorization": f"Bearer {user_token}"},
-                params={"max_articles": 20}
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Drishti scraper API call failed: {response.status_code} - {response.text}")
-                return {
-                    "success": False,
-                    "error": f"API call failed with status {response.status_code}",
-                    "stats": {"articles_saved": 0}
-                }
-                
-    except Exception as e:
-        logger.error(f"Error calling Drishti scraper API: {e}")
-        return {
-            "success": False,
-            "error": f"Internal API call failed: {str(e)}",
-            "stats": {"articles_saved": 0}
-        }
 
 
 class ManualTriggerRequest(BaseModel):
     """Request model for manual content update trigger"""
     include_rss: bool = True
-    include_drishti: bool = True
     force_refresh: bool = False
 
 
@@ -91,15 +55,11 @@ async def get_current_affairs_by_date(
 ):
     """
     🎯 MASTER PLAN ENDPOINT: Get current affairs for specific date
-    
-    Replaces the legacy /api/current-affairs/real-time endpoint with enhanced functionality:
     - Date-specific content retrieval
-    - Source filtering (RSS sources + Drishti)
+    - Source filtering (RSS sources)
     - UPSC relevance filtering (minimum 40+ score)
     - Pagination and performance optimization
     - Comprehensive metadata and statistics
-    
-    Supports all 6 RSS sources + Drishti IAS content
     """
     try:
         logger.info(f"Retrieving current affairs for date: {date}")
@@ -147,14 +107,13 @@ async def get_current_affairs_by_date(
                 "source_breakdown": source_breakdown
             },
             "sources_included": [
-                "PIB - Press Releases",
-                "The Hindu - National", 
+                "The Hindu - Editorial",
+                "The Hindu - Economy",
+                "The Hindu - Science",
                 "The Hindu - International",
-                "Indian Express - India",
+                "The Hindu - Op-Ed",
                 "Economic Times - News",
-                "LiveMint - Politics",
-                "Drishti IAS - Daily Current Affairs",
-                "Drishti IAS - Important Editorials"
+                "LiveMint - Politics"
             ],
             "performance": {
                 "response_time": "< 200ms (master plan target)",
@@ -185,18 +144,13 @@ async def manual_content_trigger(
 ):
     """
     🎯 MASTER PLAN ENDPOINT: Manual content update trigger
-    
-    New utility endpoint as specified in the master plan:
     - Admin interface for manual content updates
-    - Selective processing (RSS only, Drishti only, or both)
-    - Force refresh option to bypass caching
+    - RSS processing with force refresh option
     - Real-time processing with immediate results
     - Emergency override for system failures
-    
-    Part of business continuity and manual override capabilities
     """
     try:
-        logger.info(f"Starting manual content trigger - RSS: {request.include_rss}, Drishti: {request.include_drishti}")
+        logger.info(f"Starting manual content trigger - RSS: {request.include_rss}")
         
         results = {}
         
@@ -210,12 +164,6 @@ async def manual_content_trigger(
             rss_result = await rss_processor.process_all_sources()
             results['rss'] = rss_result
         
-        # Process Drishti content if requested
-        if request.include_drishti:
-            settings = get_settings()
-            api_key = settings.api_key
-            drishti_result = await call_drishti_daily_scraper(api_key)
-            results['drishti'] = drishti_result
         
         # Compile statistics
         total_articles = 0
@@ -230,7 +178,6 @@ async def manual_content_trigger(
             "trigger_type": "manual_admin_override",
             "processing_options": {
                 "rss_included": request.include_rss,
-                "drishti_included": request.include_drishti,
                 "force_refresh": request.force_refresh
             },
             "results": results,
@@ -281,11 +228,9 @@ async def get_daily_stats(
             "date": target_date.isoformat(),
             "statistics": stats,
             "master_plan_validation": {
-                "target_rss_articles": "50+ articles",
-                "target_drishti_articles": "10+ articles", 
+                "target_articles": "25-30 articles",
                 "min_upsc_relevance": "40+ score",
-                "rss_target_met": stats.get('total_rss_articles', 0) >= 50,
-                "drishti_target_met": stats.get('total_drishti_articles', 0) >= 10,
+                "article_target_met": stats.get('total_articles', 0) >= 25,
                 "relevance_target_met": stats.get('avg_relevance_score', 0) >= 40
             },
             "timestamp": datetime.utcnow().isoformat()

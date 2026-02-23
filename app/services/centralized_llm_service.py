@@ -188,6 +188,26 @@ class CentralizedLLMService:
                     "exam_tip",
                 ],
             },
+            "knowledge_card": {
+                "type": "object",
+                "properties": {
+                    "headline_layer": {"type": "string"},
+                    "facts_layer": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 3,
+                        "maxItems": 5,
+                    },
+                    "context_layer": {"type": "string"},
+                    "mains_angle_layer": {"type": "string"},
+                },
+                "required": [
+                    "headline_layer",
+                    "facts_layer",
+                    "context_layer",
+                    "mains_angle_layer",
+                ],
+            },
         }
 
     async def initialize_router(self):
@@ -332,6 +352,7 @@ class CentralizedLLMService:
             TaskType.QUESTION_GENERATION: self._handle_question_generation,
             TaskType.ANSWER_EVALUATION: self._handle_answer_evaluation,
             TaskType.DEDUPLICATION: self._handle_deduplication,
+            TaskType.KNOWLEDGE_CARD: self._handle_knowledge_card,
         }
 
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
@@ -394,7 +415,7 @@ class CentralizedLLMService:
     async def _handle_content_extraction(
         self, request: LLMRequest, model: str
     ) -> Dict[str, Any]:
-        """Handle content extraction tasks (RSS, Drishti scraping)"""
+        """Handle content extraction tasks (RSS scraping)"""
 
         prompt = f"""You are an expert content analyst extracting news articles for UPSC preparation.
         This is legitimate educational content for civil service exam preparation.
@@ -794,6 +815,68 @@ Title requirements:
             "estimated_cost": 0.0,
             "data": {},
         }
+
+    async def _handle_knowledge_card(
+        self, request: LLMRequest, model: str
+    ) -> Dict[str, Any]:
+        """Handle knowledge card generation for UPSC current affairs.
+
+        Generates a 5-layer knowledge card from article content, analysis data,
+        PYQ context, and syllabus context passed via custom_instructions.
+        """
+
+        prompt = f"""You are an expert UPSC knowledge card generator.
+
+Your job is to create a structured 5-layer knowledge card from the provided article
+and analysis context. This card will be used by UPSC aspirants for efficient revision.
+
+{request.content}
+
+{request.custom_instructions or ""}
+
+Generate a knowledge card with these 4 fields (the 5th layer — connections — is built separately):
+
+1. headline_layer: A single crisp headline (15-25 words) that captures the UPSC-relevant essence.
+2. facts_layer: An array of 3-5 bullet-point facts. Each fact must be specific, verifiable, and exam-worthy.
+3. context_layer: A 2-3 sentence paragraph placing this news in broader UPSC context (historical, constitutional, economic).
+4. mains_angle_layer: A single Mains-style question stem with GS paper reference, e.g. "Discuss the role of... (GS3: Economy)".
+
+Return ONLY the JSON object with these 4 keys.
+"""
+
+        knowledge_card_response_format = {
+            "type": "json",
+            "name": "knowledge_card",
+            "description": "UPSC 5-layer knowledge card generation",
+            "schema": self.response_schemas["knowledge_card"],
+        }
+
+        try:
+            response = await self._direct_completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=knowledge_card_response_format,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+
+            clean_json = strip_markdown_json(response.choices[0].message.content)
+            result_data = json.loads(clean_json)
+            logger.info(
+                f"✅ [Knowledge Card] Structured response received from {response.model}"
+            )
+
+            return {
+                "provider_used": response.model,
+                "model_used": response.model,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "estimated_cost": 0.0,
+                "data": result_data,
+            }
+
+        except Exception as e:
+            logger.error(f"Knowledge card generation failed: {e}")
+            raise
 
 
 # Global service instance

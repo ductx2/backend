@@ -41,7 +41,7 @@ class ContentEnhancementRequest(BaseModel):
     """Content enhancement request"""
     title: str = Field(..., description="Article title")
     content: str = Field(..., description="Article content to enhance")
-    source: str = Field(default="unknown", description="Content source (RSS, Drishti, etc.)")
+    source: str = Field(default="unknown", description="Content source (e.g. RSS feed name)")
     enhancement_mode: str = Field(default="comprehensive", description="Enhancement mode: comprehensive, upsc_focused, summary_only, keywords_only")
     include_summary: bool = Field(default=True, description="Include AI-generated summary")
     include_keywords: bool = Field(default=True, description="Include keyword extraction")

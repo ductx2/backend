@@ -1,0 +1,51 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-8.4.1, pluggy-1.6.0 -- C:\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Harsh\OneDrive\Desktop\upsc\backend
+plugins: anyio-4.9.0, asyncio-1.1.0, cov-7.0.0, mock-3.14.1, respx-0.22.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 16 items
+
+tests/test_integration_pipeline.py::TestIntegrationFullPipeline::test_result_contains_all_required_keys PASSED [  6%]
+tests/test_integration_pipeline.py::TestIntegrationFullPipeline::test_counts_are_self_consistent PASSED [ 12%]
+tests/test_integration_pipeline.py::TestIntegrationFullPipeline::test_articles_is_list_of_dicts PASSED [ 18%]
+tests/test_integration_pipeline.py::TestIntegrationFullPipeline::test_enriched_articles_have_all_five_layer_keys PASSED [ 25%]
+tests/test_integration_pipeline.py::TestIntegrationFullPipeline::test_filtered_increases_when_enrichment_drops_articles PASSED [ 31%]
+tests/test_integration_pipeline.py::TestIntegrationDbStorage::test_save_to_db_true_produces_db_save_key PASSED [ 37%]
+tests/test_integration_pipeline.py::TestIntegrationDbStorage::test_save_to_db_false_no_db_save_key PASSED [ 43%]
+tests/test_integration_pipeline.py::TestIntegrationDbStorage::test_save_to_db_true_all_filtered_no_db_connection PASSED [ 50%]
+tests/test_integration_pipeline.py::TestIntegrationDbStorage::test_db_row_has_correct_field_mapping PASSED [ 56%]
+tests/test_integration_pipeline.py::TestIntegrationContentExtraction::test_articles_with_content_bypass_extractor PASSED [ 62%]
+tests/test_integration_pipeline.py::TestIntegrationContentExtraction::test_articles_without_content_trigger_extractor PASSED [ 68%]
+tests/test_integration_pipeline.py::TestIntegrationContentExtraction::test_articles_without_content_and_url_are_skipped PASSED [ 75%]
+tests/test_integration_pipeline.py::TestIntegrationContentExtraction::test_extractor_error_does_not_block_other_articles PASSED [ 81%]
+tests/test_integration_pipeline.py::TestIntegrationPipelineConfig::test_max_articles_limits_fetch PASSED [ 87%]
+tests/test_integration_pipeline.py::TestIntegrationPipelineConfig::test_default_max_articles_no_crash_with_fewer PASSED [ 93%]
+tests/test_integration_pipeline.py::TestIntegrationPipelineConfig::test_max_articles_default_constant_is_importable PASSED [100%]
+
+============================= 16 passed in 10.61s =============================
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-8.4.1, pluggy-1.6.0
+rootdir: C:\Users\Harsh\OneDrive\Desktop\upsc\backend
+plugins: anyio-4.9.0, asyncio-1.1.0, cov-7.0.0, mock-3.14.1, respx-0.22.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 227 items
+
+tests\test_automation_timeout.py F                                       [  0%]
+tests\test_ie_scraper.py ...........................                     [ 12%]
+tests\test_integration_pipeline.py ................                      [ 19%]
+tests\test_knowledge_card_pipeline.py .................................. [ 34%]
+.....                                                                    [ 36%]
+tests\test_pib_scraper.py ...................                            [ 44%]
+tests\test_pyq_service.py ................................               [ 59%]
+tests\test_rss_headers.py .                                              [ 59%]
+tests\test_rss_sources.py F                                              [ 59%]
+tests\test_rss_sources_curated.py .............                          [ 65%]
+tests\test_supplementary_sources.py ...................................  [ 81%]
+tests\test_syllabus_service.py ..............                            [ 87%]
+tests\test_unified_pipeline.py .............................             [100%]
+
+=========================== short test summary info ===========================
+FAILED tests/test_automation_timeout.py::test_automation_endpoint_returns_immediately
+FAILED tests/test_rss_sources.py::test_all_rss_sources_return_200_ok - Assert...
+======================= 2 failed, 225 passed in 19.07s ========================

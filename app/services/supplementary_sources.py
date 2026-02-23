@@ -72,6 +72,26 @@ class SupplementarySources:
             "url": "https://www.barandbench.com/stories.rss",
             "section": "polity",
         },
+        # GS-II Polity — SC/HC judgments, legal news
+        {
+            "source_site": "livelaw",
+            "name": "LiveLaw",
+            "url": "https://www.livelaw.in/category/top-stories/google_feeds.xml",
+            "section": "polity",
+        },
+        # GS-II/III Policy + GS-II International Relations
+        {
+            "source_site": "niti",
+            "name": "NITI Aayog",
+            "url": "https://niti.gov.in/rss.xml",
+            "section": "policy",
+        },
+        {
+            "source_site": "gatewayhouse",
+            "name": "Gateway House",
+            "url": "https://www.gatewayhouse.in/feed",
+            "section": "international_relations",
+        },
     ]
 
     def _parse_entry(self, entry: Any, source: dict[str, str]) -> dict[str, Any] | None:
