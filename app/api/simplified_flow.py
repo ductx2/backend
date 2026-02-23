@@ -13,7 +13,7 @@ Compatible with: FastAPI 0.116.1, Python 3.13.5
 Created: 2025-08-31
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Body
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Body, Header
 from typing import Dict, Any, List, Optional
 import asyncio
 import logging
@@ -28,11 +28,21 @@ from ..services.optimized_rss_processor import OptimizedRSSProcessor
 from ..services.centralized_llm_service import llm_service
 from ..services.content_extractor import UniversalContentExtractor
 from ..models.llm_schemas import LLMRequest, TaskType, ProviderPreference
+from ..core.config import settings
 
 # Initialize router and logger
 router = APIRouter(prefix="/api/flow", tags=["Simplified Flow"])
 logger = logging.getLogger(__name__)
 
+
+_pipeline_lock = asyncio.Lock()
+
+
+class CronPipelineResponse(BaseModel):
+    status: str
+    articles_processed: int
+    cards_produced: int
+    duration_seconds: float
 
 # Request models
 class AnalysisRequest(BaseModel):
@@ -652,3 +662,44 @@ async def run_knowledge_pipeline(
         "elapsed_seconds": elapsed,
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+
+# ---------------------------------------------------------------------------
+# Cron-triggered pipeline endpoint (twice-daily via VPS crontab)
+#   0 2 * * *   → 7:30 AM IST (2:00 UTC)
+#   30 12 * * * → 6:00 PM IST (12:30 UTC)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/cron/run-knowledge-pipeline", response_model=CronPipelineResponse)
+async def run_cron_pipeline(
+    authorization: str | None = Header(default=None),
+):
+    expected = settings.cron_secret
+    if not expected or not authorization or authorization != f"Bearer {expected}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if _pipeline_lock.locked():
+        raise HTTPException(status_code=409, detail="Pipeline already running")
+
+    async with _pipeline_lock:
+        from ..services.unified_pipeline import UnifiedPipeline
+
+        start = time.time()
+        try:
+            result = await UnifiedPipeline().run(save_to_db=True)
+        except Exception as e:
+            logger.error("Cron pipeline failed: %s", e)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Pipeline failed: {e}",
+            )
+        elapsed = round(time.time() - start, 2)
+
+    return CronPipelineResponse(
+        status="completed",
+        articles_processed=result["total_fetched"],
+        cards_produced=result["total_enriched"],
+        duration_seconds=elapsed,
+    )
