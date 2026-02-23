@@ -1,0 +1,13 @@
+EVIDENCE: score=40 passes relevance threshold (boundary condition)
+================================================================
+Test: TestThresholdConfigurable::test_process_article_passes_at_exactly_40
+Result: PASSED
+
+Test run output:
+  tests/test_knowledge_card_pipeline.py::TestThresholdConfigurable::test_process_article_passes_at_exactly_40 PASSED
+
+Confirms: Articles with relevance score == 40 are NOT filtered out.
+The new threshold (settings.relevance_threshold = 40) uses >= logic,
+so score 40 is the inclusive lower bound that passes through.
+
+Run: 2026-02-23 | 5 passed in 6.83s

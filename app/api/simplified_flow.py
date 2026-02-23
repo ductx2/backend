@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Request models
 class AnalysisRequest(BaseModel):
     articles: List[Dict[str, Any]]
-    min_relevance_score: int = 40
+    min_relevance_score: int = 40  # matches settings.relevance_threshold
 
 
 class ExtractionRequest(BaseModel):
@@ -428,8 +428,8 @@ async def complete_pipeline(
         step2_response = await step2_analyze_relevance(analysis_request, user)
         relevant_articles = step2_response["data"]["relevant_articles"]
 
-        # Step 3: Extract content (from top 20 relevant articles)
-        top_articles = relevant_articles[:20]  # Limit for performance
+        # Step 3: Extract content (from top 30 relevant articles)
+        top_articles = relevant_articles[:30]  # Limit for performance
 
         # Create a map of url -> ai_analysis for merging later
         ai_analysis_map = {
@@ -625,4 +625,30 @@ def prepare_article_for_database(article: Dict[str, Any]) -> Dict[str, Any]:
         "content_hash": content_hash,
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat(),
+        "status": "published",
+    }
+
+
+@router.post("/run-knowledge-pipeline", response_model=Dict[str, Any])
+async def run_knowledge_pipeline(
+    save_to_db: bool = Body(default=False, embed=True),
+    user: dict = Depends(require_admin_access),
+):
+    from ..services.unified_pipeline import UnifiedPipeline
+    start = time.time()
+    try:
+        pipeline = UnifiedPipeline()
+        result = await pipeline.run(save_to_db=save_to_db)
+    except Exception as e:
+        logger.error("Knowledge pipeline failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Pipeline failed: {e}",
+        )
+    elapsed = round(time.time() - start, 2)
+    return {
+        "success": True,
+        "data": result,
+        "elapsed_seconds": elapsed,
+        "timestamp": datetime.utcnow().isoformat(),
     }

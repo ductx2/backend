@@ -133,8 +133,8 @@ class Settings(BaseSettings):
         default=25, description="Maximum articles to process per RSS source"
     )
 
-    min_upsc_relevance: int = Field(
-        default=40, description="Minimum UPSC relevance score for article inclusion"
+    relevance_threshold: int = Field(
+        default=40, description="Minimum UPSC relevance score to pass articles through the pipeline"
     )
 
     # Scraping Configuration

@@ -28,7 +28,7 @@ from app.core.security import (
 from app.core.middleware import configure_middleware
 from app.core.database import get_database, SupabaseConnection
 
-# Import API routers - Streamlined (removed deprecated drishti_scraper_api)
+# Import API routers
 from app.api import current_affairs, automation, simplified_flow
 
 # Configure logging
@@ -46,7 +46,7 @@ def create_application() -> FastAPI:
     # FastAPI application with metadata and security
     app = FastAPI(
         title="UPSC Current Affairs API",
-        description="FastAPI backend for processing current affairs from RSS sources and Drishti IAS scraping",
+        description="FastAPI backend for processing UPSC current affairs from curated RSS sources",
         version="1.0.0",
         docs_url="/docs" if settings.api_docs_enabled else None,
         redoc_url="/redoc" if settings.api_docs_enabled else None,
@@ -61,7 +61,7 @@ def create_application() -> FastAPI:
             },
             {
                 "name": "Current Affairs",
-                "description": "RSS and Drishti IAS content processing endpoints",
+                "description": "RSS content processing endpoints",
             },
         ],
     )
@@ -166,7 +166,7 @@ async def admin_status(
             ],
             "cors_origins": settings.cors_origins,
             "max_articles_per_source": settings.max_articles_per_source,
-            "min_upsc_relevance": settings.min_upsc_relevance,
+            "min_upsc_relevance": settings.relevance_threshold,
         },
         "database_stats": {
             "status": db_health.get("status", "unknown"),
@@ -213,7 +213,7 @@ async def general_exception_handler(request, exc):
 app.include_router(simplified_flow.router)
 app.include_router(current_affairs.router)
 app.include_router(automation.router)
-# Removed: drishti_scraper_api.router (deprecated)
+
 
 # 🎯 Clean, focused API - No legacy aliases needed
 

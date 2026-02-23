@@ -1,0 +1,13 @@
+EVIDENCE: score=39 is filtered out (below threshold)
+=====================================================
+Test: TestThresholdConfigurable::test_process_article_filters_below_40
+Result: PASSED
+
+Test run output:
+  tests/test_knowledge_card_pipeline.py::TestThresholdConfigurable::test_process_article_filters_below_40 PASSED
+
+Confirms: Articles with relevance score == 39 are filtered out (returns None).
+The pipeline correctly rejects articles below settings.relevance_threshold (40).
+Old threshold was 55 (hardcoded class constant) — now it's 40 from config.
+
+Run: 2026-02-23 | 5 passed in 6.83s

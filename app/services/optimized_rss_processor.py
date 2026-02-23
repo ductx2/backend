@@ -88,7 +88,7 @@ class OptimizedRSSProcessor:
     Revolutionary RSS processing engine with 10x performance improvement
 
     Features:
-    - Parallel async processing of all 6 sources
+    - Parallel async processing of all 8 curated Hindu section feeds
     - Single AI pass with structured output
     - Smart caching with health monitoring
     - Bulk database operations
@@ -99,13 +99,48 @@ class OptimizedRSSProcessor:
         self.settings = get_settings()
         self.db = get_database_sync()
 
-        # Configure premium RSS sources (proven working from forensic analysis)
+        # === CURATED HINDU SECTION FEEDS (zero garbage) ===
+        # Indian Express removed (ALL feeds 403 Forbidden — Cloudflare WAF)
+        # LiveMint removed (not UPSC-focused enough)
+        # Economic Times removed (generic business news)
         # DD News removed (persistent SSL/TLS connection failures)
+        # These sources will be replaced by web scrapers in Wave 2
         self.sources = [
+            # === THE HINDU (GOLD — curated section feeds, zero garbage) ===
             PremiumRSSSource(
-                name="The Hindu - National",
-                url="https://www.thehindu.com/news/national/feeder/default.rss",
+                name="The Hindu - Editorial",
+                url="https://www.thehindu.com/opinion/editorial/feeder/default.rss",
+                priority=1,  # HIGHEST — 2 editorials/day, pure UPSC gold
+                enabled=True,
+            ),
+            PremiumRSSSource(
+                name="The Hindu - Op-Ed",
+                url="https://www.thehindu.com/opinion/op-ed/feeder/default.rss",
                 priority=1,
+                enabled=True,
+            ),
+            PremiumRSSSource(
+                name="The Hindu - Lead",
+                url="https://www.thehindu.com/opinion/lead/feeder/default.rss",
+                priority=1,
+                enabled=True,
+            ),
+            PremiumRSSSource(
+                name="The Hindu - Economy",
+                url="https://www.thehindu.com/business/Economy/feeder/default.rss",
+                priority=1,
+                enabled=True,
+            ),
+            PremiumRSSSource(
+                name="The Hindu - Science",
+                url="https://www.thehindu.com/sci-tech/science/feeder/default.rss",
+                priority=1,
+                enabled=True,
+            ),
+            PremiumRSSSource(
+                name="The Hindu - Technology",
+                url="https://www.thehindu.com/sci-tech/technology/feeder/default.rss",
+                priority=2,
                 enabled=True,
             ),
             PremiumRSSSource(
@@ -115,21 +150,9 @@ class OptimizedRSSProcessor:
                 enabled=True,
             ),
             PremiumRSSSource(
-                name="Economic Times - News",
-                url="https://economictimes.indiatimes.com/rssfeedstopstories.cms",
-                priority=1,
-                enabled=True,
-            ),
-            PremiumRSSSource(
-                name="Indian Express - India",
-                url="https://indianexpress.com/section/india/feed/",
-                priority=1,
-                enabled=True,
-            ),
-            PremiumRSSSource(
-                name="LiveMint - Politics",
-                url="https://www.livemint.com/rss/politics",
-                priority=2,
+                name="The Hindu - National",
+                url="https://www.thehindu.com/news/national/feeder/default.rss",
+                priority=3,  # LOWEST — still has some garbage, but needed for coverage
                 enabled=True,
             ),
         ]
@@ -156,7 +179,7 @@ class OptimizedRSSProcessor:
         # Initialize content extractor for full content extraction
         self.content_extractor = UniversalContentExtractor()
 
-        logger.info("OptimizedRSSProcessor initialized with 6 premium sources")
+        logger.info("OptimizedRSSProcessor initialized with 8 curated Hindu section feeds")
 
     async def fetch_rss_source_async(
         self, source: PremiumRSSSource
@@ -580,7 +603,7 @@ class OptimizedRSSProcessor:
                 )
 
                 # Only include articles meeting minimum relevance threshold
-                if processed_article.upsc_relevance >= self.settings.min_upsc_relevance:
+                if processed_article.upsc_relevance >= self.settings.relevance_threshold:
                     processed_articles.append(processed_article)
 
             return processed_articles
