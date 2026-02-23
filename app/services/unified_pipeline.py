@@ -8,6 +8,12 @@ from app.services.optimized_rss_processor import OptimizedRSSProcessor
 from app.services.ie_scraper import IndianExpressScraper
 from app.services.pib_scraper import PIBScraper
 from app.services.supplementary_sources import SupplementarySources
+from app.services.playwright_session import PlaywrightSessionManager
+from app.services.hindu_playwright_scraper import HinduPlaywrightScraper
+from app.services.ie_playwright_scraper import IEPlaywrightScraper
+from app.services.mea_scraper import MEAScraper
+from app.services.orf_scraper import ORFScraper
+from app.services.idsa_scraper import IDSAScraper
 from app.services.content_extractor import UniversalContentExtractor
 from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
 from app.core.database import SupabaseConnection
@@ -42,6 +48,15 @@ def _normalize_hindu_article(article: dict[str, Any]) -> dict[str, Any]:
     article["url"] = article.get("source_url", "")
     article["source_site"] = "hindu"
     article["section"] = _derive_section(article.get("source", ""))
+    return article
+
+
+
+
+def _normalize_httpx_article(article: dict[str, Any]) -> dict[str, Any]:
+    """Normalize httpx scraper output: copy source_url -> url for dedup."""
+    if "url" not in article and "source_url" in article:
+        article["url"] = article["source_url"]
     return article
 
 
@@ -140,11 +155,47 @@ class UnifiedPipeline:
             sources = SupplementarySources()
             return await asyncio.to_thread(sources.fetch_all)
 
+        async def _fetch_hindu_playwright() -> list[dict[str, Any]]:
+            session = PlaywrightSessionManager()
+            scraper = HinduPlaywrightScraper(session)
+            try:
+                return await scraper.scrape_editorials()
+            finally:
+                await session.close()
+
+        async def _fetch_ie_playwright() -> list[dict[str, Any]]:
+            session = PlaywrightSessionManager()
+            scraper = IEPlaywrightScraper(session)
+            try:
+                return await scraper.scrape_editorials()
+            finally:
+                await session.close()
+
+        async def _fetch_mea() -> list[dict[str, Any]]:
+            scraper = MEAScraper()
+            articles = await scraper.fetch_articles()
+            return [_normalize_httpx_article(a) for a in articles]
+
+        async def _fetch_orf() -> list[dict[str, Any]]:
+            scraper = ORFScraper()
+            articles = await scraper.fetch_articles()
+            return [_normalize_httpx_article(a) for a in articles]
+
+        async def _fetch_idsa() -> list[dict[str, Any]]:
+            scraper = IDSAScraper()
+            articles = await scraper.fetch_articles()
+            return [_normalize_httpx_article(a) for a in articles]
+
         tasks = {
             "hindu": _fetch_hindu(),
             "ie": _fetch_ie(),
             "pib": _fetch_pib(),
             "supplementary": _fetch_supplementary(),
+            "hindu_playwright": _fetch_hindu_playwright(),
+            "ie_playwright": _fetch_ie_playwright(),
+            "mea": _fetch_mea(),
+            "orf": _fetch_orf(),
+            "idsa": _fetch_idsa(),
         }
 
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)

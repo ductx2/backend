@@ -1,6 +1,6 @@
 """
 TDD Tests for UnifiedPipeline (T13).
-23 tests covering: imports, fetch, enrich, run, edge cases.
+Tests covering: imports, fetch, enrich, run, edge cases, Wave 3 scrapers.
 All source dependencies are mocked — no network calls.
 """
 
@@ -76,6 +76,78 @@ def _supplementary_articles():
     ]
 
 
+def _hindu_pw_articles():
+    """Simulated HinduPlaywrightScraper output (uses 'url', not 'source_url')."""
+    return [
+        {
+            "title": "Hindu PW Article 1",
+            "url": "https://thehindu.com/pw/editorial1",
+            "content": "Playwright-scraped Hindu editorial.",
+            "published_date": "2026-02-23",
+            "author": "PW Author",
+            "section": "editorial",
+            "source_site": "hindu",
+        },
+    ]
+
+
+def _ie_pw_articles():
+    """Simulated IEPlaywrightScraper output (uses 'url', not 'source_url')."""
+    return [
+        {
+            "title": "IE PW Article 1",
+            "url": "https://indianexpress.com/pw/explained1",
+            "content": "Playwright-scraped IE editorial.",
+            "published_date": "2026-02-23",
+            "author": "IE PW Author",
+            "section": "explained",
+            "source_site": "indianexpress",
+        },
+    ]
+
+
+def _mea_articles():
+    """Simulated MEAScraper output (uses 'source_url', not 'url')."""
+    return [
+        {
+            "title": "MEA Press Release 1",
+            "content": "MEA press release content.",
+            "source_url": "https://mea.gov.in/press-release1",
+            "source_site": "mea",
+            "section": "press-releases",
+            "published_date": "2026-02-23",
+        },
+    ]
+
+
+def _orf_articles():
+    """Simulated ORFScraper output (uses 'source_url', not 'url')."""
+    return [
+        {
+            "title": "ORF Expert Speak 1",
+            "content": "ORF expert analysis content.",
+            "source_url": "https://orfonline.org/expert-speak/1",
+            "source_site": "orf",
+            "section": "expert-speak",
+            "published_date": "2026-02-23",
+        },
+    ]
+
+
+def _idsa_articles():
+    """Simulated IDSAScraper output (uses 'source_url', not 'url')."""
+    return [
+        {
+            "title": "IDSA Comment 1",
+            "content": "IDSA strategic analysis.",
+            "source_url": "https://idsa.in/comment/1",
+            "source_site": "idsa",
+            "section": "comments-briefs",
+            "published_date": "2026-02-23",
+        },
+    ]
+
+
 def _enriched_article(title="Test", score=80):
     """Simulated output from KnowledgeCardPipeline.process_article."""
     return {
@@ -85,6 +157,112 @@ def _enriched_article(title="Test", score=80):
         "key_concepts": ["federalism"],
         "summary": "A summary.",
         "pyq_connections": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Helper: build mock patches for Wave 3 scrapers
+# ---------------------------------------------------------------------------
+
+# Module path prefix for patches
+_P = "app.services.unified_pipeline"
+
+# All 9 source patch targets (4 legacy + 5 Wave 3)
+_WAVE3_PATCH_TARGETS = [
+    f"{_P}.PlaywrightSessionManager",
+    f"{_P}.HinduPlaywrightScraper",
+    f"{_P}.IEPlaywrightScraper",
+    f"{_P}.MEAScraper",
+    f"{_P}.ORFScraper",
+    f"{_P}.IDSAScraper",
+]
+
+
+def _setup_wave3_mocks(
+    mock_session_cls,
+    mock_hindu_pw_cls,
+    mock_ie_pw_cls,
+    mock_mea_cls,
+    mock_orf_cls,
+    mock_idsa_cls,
+    *,
+    hindu_pw_data=None,
+    ie_pw_data=None,
+    mea_data=None,
+    orf_data=None,
+    idsa_data=None,
+    fail_all=False,
+):
+    """Wire up Wave 3 mock classes with default or custom return values.
+
+    Returns dict of mock instances for assertion access.
+    """
+    # PlaywrightSessionManager — shared by both playwright scrapers
+    mock_session = AsyncMock()
+    mock_session.cleanup = AsyncMock()
+    mock_session_cls.return_value = mock_session
+
+    exception = Exception("fail") if fail_all else None
+
+    # HinduPlaywrightScraper
+    mock_hindu_pw = MagicMock()
+    if fail_all:
+        mock_hindu_pw.scrape_editorials = AsyncMock(side_effect=exception)
+    else:
+        mock_hindu_pw.scrape_editorials = AsyncMock(
+            return_value=hindu_pw_data
+            if hindu_pw_data is not None
+            else _hindu_pw_articles()
+        )
+    mock_hindu_pw_cls.return_value = mock_hindu_pw
+
+    # IEPlaywrightScraper
+    mock_ie_pw = MagicMock()
+    if fail_all:
+        mock_ie_pw.scrape_editorials = AsyncMock(side_effect=exception)
+    else:
+        mock_ie_pw.scrape_editorials = AsyncMock(
+            return_value=ie_pw_data if ie_pw_data is not None else _ie_pw_articles()
+        )
+    mock_ie_pw_cls.return_value = mock_ie_pw
+
+    # MEAScraper
+    mock_mea = MagicMock()
+    if fail_all:
+        mock_mea.fetch_articles = AsyncMock(side_effect=exception)
+    else:
+        mock_mea.fetch_articles = AsyncMock(
+            return_value=mea_data if mea_data is not None else _mea_articles()
+        )
+    mock_mea_cls.return_value = mock_mea
+
+    # ORFScraper
+    mock_orf = MagicMock()
+    if fail_all:
+        mock_orf.fetch_articles = AsyncMock(side_effect=exception)
+    else:
+        mock_orf.fetch_articles = AsyncMock(
+            return_value=orf_data if orf_data is not None else _orf_articles()
+        )
+    mock_orf_cls.return_value = mock_orf
+
+    # IDSAScraper
+    mock_idsa = MagicMock()
+    if fail_all:
+        mock_idsa.fetch_articles = AsyncMock(side_effect=exception)
+    else:
+        mock_idsa.fetch_articles = AsyncMock(
+            return_value=idsa_data if idsa_data is not None else _idsa_articles()
+        )
+    mock_idsa_cls.return_value = mock_idsa
+
+    return {
+        "session": mock_session,
+        "hindu_pw": mock_hindu_pw,
+        "ie_pw": mock_ie_pw,
+        "mea": mock_mea,
+        "orf": mock_orf,
+        "idsa": mock_idsa,
     }
 
 
@@ -126,7 +304,7 @@ class TestImportsAndInstantiation:
 class TestFetchAllSources:
     @pytest.fixture(autouse=True)
     def _patch_sources(self):
-        """Patch all 4 source classes so no network calls happen."""
+        """Patch all 9 source classes so no network calls happen."""
         with (
             patch(
                 "app.services.unified_pipeline.OptimizedRSSProcessor"
@@ -134,6 +312,18 @@ class TestFetchAllSources:
             patch("app.services.unified_pipeline.IndianExpressScraper") as mock_ie_cls,
             patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
             patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
+            patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
         ):
             # Hindu RSS — async
             mock_rss = MagicMock()
@@ -157,10 +347,21 @@ class TestFetchAllSources:
             mock_sup.fetch_all = MagicMock(return_value=_supplementary_articles())
             mock_sup_cls.return_value = mock_sup
 
+            # Wave 3 scrapers
+            w3 = _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+            )
+
             self.mock_rss = mock_rss
             self.mock_ie = mock_ie
             self.mock_pib = mock_pib
             self.mock_sup = mock_sup
+            self.w3 = w3
             yield
 
     @pytest.mark.asyncio
@@ -171,12 +372,12 @@ class TestFetchAllSources:
         assert isinstance(result, list)
 
     @pytest.mark.asyncio
-    async def test_merges_all_four_sources(self):
-        """Total = 2 hindu + 1 ie + 1 pib + 1 supplementary = 5."""
+    async def test_merges_all_nine_sources(self):
+        """Total = 2 hindu + 1 ie + 1 pib + 1 sup + 1 hindu_pw + 1 ie_pw + 1 mea + 1 orf + 1 idsa = 10."""
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().fetch_all_sources()
-        assert len(result) == 5
+        assert len(result) == 10
 
     @pytest.mark.asyncio
     async def test_deduplicates_by_url(self):
@@ -206,8 +407,8 @@ class TestFetchAllSources:
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().fetch_all_sources()
-        # Hindu(2) + IE(1) + Supplementary(1) = 4, PIB failed
-        assert len(result) >= 3
+        # 10 total minus PIB(1) = at least 9; using >= for safety
+        assert len(result) >= 8
 
     @pytest.mark.asyncio
     async def test_all_articles_have_source_site(self):
@@ -331,6 +532,18 @@ class TestRun:
             patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
             patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
             patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
+            patch(
                 "app.services.unified_pipeline.KnowledgeCardPipeline"
             ) as mock_kcp_cls,
             patch(
@@ -355,6 +568,16 @@ class TestRun:
             mock_sup.fetch_all = MagicMock(return_value=_supplementary_articles())
             mock_sup_cls.return_value = mock_sup
 
+            # Wave 3 scrapers
+            w3 = _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+            )
+
             mock_kcp = MagicMock()
             mock_kcp.process_article = AsyncMock(return_value=_enriched_article())
             mock_kcp_cls.return_value = mock_kcp
@@ -369,6 +592,7 @@ class TestRun:
             self.mock_ie = mock_ie
             self.mock_pib = mock_pib
             self.mock_sup = mock_sup
+            self.w3 = w3
             self.mock_kcp = mock_kcp
             self.mock_ext = mock_ext
             yield
@@ -384,12 +608,12 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_correct_counts(self):
-        """5 fetched, all enriched (none filtered) → enriched=5, filtered=0."""
+        """10 fetched, all enriched (none filtered) → enriched=10, filtered=0."""
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().run()
-        assert result["total_fetched"] == 5
-        assert result["total_enriched"] == 5
+        assert result["total_fetched"] == 10
+        assert result["total_enriched"] == 10
         assert result["filtered"] == 0
 
     @pytest.mark.asyncio
@@ -407,16 +631,22 @@ class TestRun:
         from app.services.unified_pipeline import UnifiedPipeline
 
         await UnifiedPipeline().run()
-        # 3 articles have no content: IE(1) + PIB(1) + Supplementary(1)
+        # Articles without content: IE(1) + PIB(1) + Supplementary(1) = 3
+        # Wave 3 articles all have content, so extractor NOT called for them
         assert self.mock_ext.extract_content.call_count >= 3
 
     @pytest.mark.asyncio
     async def test_skip_extraction_for_articles_with_content(self):
         """Hindu articles already have content → extractor NOT called for them."""
-        # Make only Hindu articles available
+        # Make only Hindu RSS articles available (all others return empty)
         self.mock_ie.scrape_all_sections = AsyncMock(return_value=[])
         self.mock_pib.scrape_releases = AsyncMock(return_value=[])
         self.mock_sup.fetch_all = MagicMock(return_value=[])
+        self.w3["hindu_pw"].scrape_editorials = AsyncMock(return_value=[])
+        self.w3["ie_pw"].scrape_editorials = AsyncMock(return_value=[])
+        self.w3["mea"].fetch_articles = AsyncMock(return_value=[])
+        self.w3["orf"].fetch_articles = AsyncMock(return_value=[])
+        self.w3["idsa"].fetch_articles = AsyncMock(return_value=[])
 
         from app.services.unified_pipeline import UnifiedPipeline
 
@@ -430,8 +660,8 @@ class TestRun:
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().run()
-        # Hindu articles (2) still have content → should still be enriched
-        assert result["total_enriched"] >= 2
+        # Articles with content: Hindu(2) + hindu_pw(1) + ie_pw(1) + mea(1) + orf(1) + idsa(1) = 7
+        assert result["total_enriched"] >= 7
 
     @pytest.mark.asyncio
     async def test_process_article_exception_does_not_crash(self):
@@ -449,8 +679,8 @@ class TestRun:
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().run()
-        # 5 articles total, 1 failed → at least 4 enriched
-        assert result["total_enriched"] >= 4
+        # 10 articles total, 1 failed → at least 9 enriched
+        assert result["total_enriched"] >= 9
 
     @pytest.mark.asyncio
     async def test_enriched_articles_in_result(self):
@@ -477,6 +707,18 @@ class TestEdgeCases:
             patch("app.services.unified_pipeline.IndianExpressScraper") as mock_ie_cls,
             patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
             patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
+            patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
         ):
             mock_rss = MagicMock()
             mock_rss.fetch_all_sources_parallel = AsyncMock(
@@ -495,6 +737,21 @@ class TestEdgeCases:
             mock_sup = MagicMock()
             mock_sup.fetch_all = MagicMock(return_value=[])
             mock_sup_cls.return_value = mock_sup
+
+            # Wave 3 — all empty
+            _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+                hindu_pw_data=[],
+                ie_pw_data=[],
+                mea_data=[],
+                orf_data=[],
+                idsa_data=[],
+            )
 
             from app.services.unified_pipeline import UnifiedPipeline
 
@@ -515,6 +772,18 @@ class TestEdgeCases:
             patch("app.services.unified_pipeline.IndianExpressScraper") as mock_ie_cls,
             patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
             patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
+            patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
         ):
             mock_rss = MagicMock()
             mock_rss.fetch_all_sources_parallel = AsyncMock(
@@ -534,6 +803,17 @@ class TestEdgeCases:
             mock_sup.fetch_all = MagicMock(side_effect=Exception("fail"))
             mock_sup_cls.return_value = mock_sup
 
+            # Wave 3 — all fail
+            _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+                fail_all=True,
+            )
+
             from app.services.unified_pipeline import UnifiedPipeline
 
             result = await UnifiedPipeline().fetch_all_sources()
@@ -549,6 +829,18 @@ class TestEdgeCases:
             patch("app.services.unified_pipeline.IndianExpressScraper") as mock_ie_cls,
             patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
             patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
+            patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
         ):
             mock_rss = MagicMock()
             mock_rss.fetch_all_sources_parallel = AsyncMock(return_value=[])
@@ -587,6 +879,21 @@ class TestEdgeCases:
             mock_sup.fetch_all = MagicMock(return_value=[])
             mock_sup_cls.return_value = mock_sup
 
+            # Wave 3 — all empty
+            _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+                hindu_pw_data=[],
+                ie_pw_data=[],
+                mea_data=[],
+                orf_data=[],
+                idsa_data=[],
+            )
+
             from app.services.unified_pipeline import UnifiedPipeline
 
             result = await UnifiedPipeline().fetch_all_sources()
@@ -614,7 +921,12 @@ def _enriched_knowledge_card_article():
         "key_facts": ["fiscal deficit target", "capital expenditure"],
         "keywords": ["budget", "fiscal policy"],
         "syllabus_matches": [
-            {"paper": "GS3", "topic": "Economy", "sub_topic": "Government Budgeting", "confidence": 0.9},
+            {
+                "paper": "GS3",
+                "topic": "Economy",
+                "sub_topic": "Government Budgeting",
+                "confidence": 0.9,
+            },
         ],
         "priority_triage": "must_know",
         # Pass 2 (5 layers)
@@ -654,11 +966,16 @@ class TestPrepareKnowledgeCardForDatabase:
         assert db_row["importance"] == "high"  # must_know -> high
 
         # 5-layer fields
-        assert db_row["headline_layer"] == "Union Budget 2026 focuses on capital expenditure."
+        assert (
+            db_row["headline_layer"]
+            == "Union Budget 2026 focuses on capital expenditure."
+        )
         assert db_row["facts_layer"] == ["Fiscal deficit at 5.1%", "Capex up 20%"]
         assert db_row["context_layer"] == "Continuation of fiscal consolidation path."
         assert db_row["connections_layer"]["pyq_count"] == 1
-        assert db_row["mains_angle_layer"] == "Analyze the fiscal consolidation strategy."
+        assert (
+            db_row["mains_angle_layer"] == "Analyze the fiscal consolidation strategy."
+        )
         assert db_row["priority_triage"] == "must_know"
         assert db_row["syllabus_topic"] == "Government Budgeting"
 
@@ -745,14 +1062,24 @@ class TestRunSaveToDb:
             patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
             patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
             patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
+            patch(
                 "app.services.unified_pipeline.KnowledgeCardPipeline"
             ) as mock_kcp_cls,
             patch(
                 "app.services.unified_pipeline.UniversalContentExtractor"
             ) as mock_ext_cls,
-            patch(
-                "app.services.unified_pipeline.SupabaseConnection"
-            ) as mock_db_cls,
+            patch("app.services.unified_pipeline.SupabaseConnection") as mock_db_cls,
         ):
             mock_rss = MagicMock()
             mock_rss.fetch_all_sources_parallel = AsyncMock(return_value=[])
@@ -760,14 +1087,16 @@ class TestRunSaveToDb:
 
             mock_ie = MagicMock()
             mock_ie.scrape_all_sections = AsyncMock(
-                return_value=[{
-                    "title": "Test Article",
-                    "url": "http://test.com/1",
-                    "content": "Test content body.",
-                    "published_date": "2026-02-23",
-                    "section": "explained",
-                    "source_site": "indianexpress",
-                }]
+                return_value=[
+                    {
+                        "title": "Test Article",
+                        "url": "http://test.com/1",
+                        "content": "Test content body.",
+                        "published_date": "2026-02-23",
+                        "section": "explained",
+                        "source_site": "indianexpress",
+                    }
+                ]
             )
             mock_ie_cls.return_value = mock_ie
 
@@ -778,6 +1107,21 @@ class TestRunSaveToDb:
             mock_sup = MagicMock()
             mock_sup.fetch_all = MagicMock(return_value=[])
             mock_sup_cls.return_value = mock_sup
+
+            # Wave 3 — all empty (this test focuses on save_to_db logic)
+            _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+                hindu_pw_data=[],
+                ie_pw_data=[],
+                mea_data=[],
+                orf_data=[],
+                idsa_data=[],
+            )
 
             mock_kcp = MagicMock()
             mock_kcp.process_article = AsyncMock(
@@ -822,3 +1166,161 @@ class TestRunSaveToDb:
 
         self.mock_db_cls.assert_not_called()
         assert "db_save" not in result
+
+
+# ---------------------------------------------------------------------------
+# 30-35  Wave 3 scraper-specific tests
+# ---------------------------------------------------------------------------
+
+
+class TestWave3Scrapers:
+    """Tests specific to the 5 new Wave 3 scrapers wired into the pipeline."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_sources(self):
+        """Patch all 9 source classes."""
+        with (
+            patch(
+                "app.services.unified_pipeline.OptimizedRSSProcessor"
+            ) as mock_rss_cls,
+            patch("app.services.unified_pipeline.IndianExpressScraper") as mock_ie_cls,
+            patch("app.services.unified_pipeline.PIBScraper") as mock_pib_cls,
+            patch("app.services.unified_pipeline.SupplementarySources") as mock_sup_cls,
+            patch(
+                "app.services.unified_pipeline.PlaywrightSessionManager"
+            ) as mock_session_cls,
+            patch(
+                "app.services.unified_pipeline.HinduPlaywrightScraper"
+            ) as mock_hindu_pw_cls,
+            patch(
+                "app.services.unified_pipeline.IEPlaywrightScraper"
+            ) as mock_ie_pw_cls,
+            patch("app.services.unified_pipeline.MEAScraper") as mock_mea_cls,
+            patch("app.services.unified_pipeline.ORFScraper") as mock_orf_cls,
+            patch("app.services.unified_pipeline.IDSAScraper") as mock_idsa_cls,
+        ):
+            # Legacy sources — return empty to isolate Wave 3 tests
+            mock_rss = MagicMock()
+            mock_rss.fetch_all_sources_parallel = AsyncMock(return_value=[])
+            mock_rss_cls.return_value = mock_rss
+
+            mock_ie = MagicMock()
+            mock_ie.scrape_all_sections = AsyncMock(return_value=[])
+            mock_ie_cls.return_value = mock_ie
+
+            mock_pib = MagicMock()
+            mock_pib.scrape_releases = AsyncMock(return_value=[])
+            mock_pib_cls.return_value = mock_pib
+
+            mock_sup = MagicMock()
+            mock_sup.fetch_all = MagicMock(return_value=[])
+            mock_sup_cls.return_value = mock_sup
+
+            # Wave 3 scrapers — default fixture data
+            self.w3 = _setup_wave3_mocks(
+                mock_session_cls,
+                mock_hindu_pw_cls,
+                mock_ie_pw_cls,
+                mock_mea_cls,
+                mock_orf_cls,
+                mock_idsa_cls,
+            )
+            self.mock_session_cls = mock_session_cls
+            yield
+
+    @pytest.mark.asyncio
+    async def test_hindu_playwright_returns_articles(self):
+        """HinduPlaywrightScraper articles appear in pipeline output."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        titles = [a["title"] for a in result]
+        assert "Hindu PW Article 1" in titles
+
+    @pytest.mark.asyncio
+    async def test_ie_playwright_returns_articles(self):
+        """IEPlaywrightScraper articles appear in pipeline output."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        titles = [a["title"] for a in result]
+        assert "IE PW Article 1" in titles
+
+    @pytest.mark.asyncio
+    async def test_mea_returns_articles(self):
+        """MEAScraper articles appear in pipeline output."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        titles = [a["title"] for a in result]
+        assert "MEA Press Release 1" in titles
+
+    @pytest.mark.asyncio
+    async def test_orf_returns_articles(self):
+        """ORFScraper articles appear in pipeline output."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        titles = [a["title"] for a in result]
+        assert "ORF Expert Speak 1" in titles
+
+    @pytest.mark.asyncio
+    async def test_idsa_returns_articles(self):
+        """IDSAScraper articles appear in pipeline output."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        titles = [a["title"] for a in result]
+        assert "IDSA Comment 1" in titles
+
+    @pytest.mark.asyncio
+    async def test_httpx_source_url_normalized_to_url(self):
+        """MEA/ORF/IDSA articles have source_url copied to url for dedup."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        httpx_sources = {"mea", "orf", "idsa"}
+        for article in result:
+            if article.get("source_site") in httpx_sources:
+                assert "url" in article, (
+                    f"httpx article missing 'url': {article.get('title')}"
+                )
+                assert article["url"].startswith("http"), (
+                    f"url not normalized: {article.get('title')}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_playwright_session_cleanup_called(self):
+        """PlaywrightSessionManager.close() is called after scraping."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        await UnifiedPipeline().fetch_all_sources()
+        # Session is created twice (hindu_pw + ie_pw), cleanup called for each
+        assert self.w3["session"].close.call_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_wave3_failure_does_not_affect_others(self):
+        """If one Wave 3 source fails, others still return articles."""
+        self.w3["mea"].fetch_articles = AsyncMock(side_effect=Exception("MEA down"))
+        self.w3["orf"].fetch_articles = AsyncMock(side_effect=Exception("ORF down"))
+
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        # hindu_pw(1) + ie_pw(1) + idsa(1) = 3 (mea + orf failed)
+        assert len(result) >= 3
+        titles = [a["title"] for a in result]
+        assert "IDSA Comment 1" in titles
+
+    @pytest.mark.asyncio
+    async def test_all_nine_sources_contribute(self):
+        """When all 9 sources succeed with unique URLs, all articles appear."""
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().fetch_all_sources()
+        source_sites = {a.get("source_site") for a in result}
+        # Wave 3 sources: hindu, indianexpress (from ie_pw), mea, orf, idsa
+        for expected_site in ("hindu", "indianexpress", "mea", "orf", "idsa"):
+            assert expected_site in source_sites, (
+                f"Missing source_site '{expected_site}' in results"
+            )
