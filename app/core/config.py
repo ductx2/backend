@@ -163,6 +163,7 @@ class Settings(BaseSettings):
     IE_EMAIL: str | None = None
     IE_PASSWORD: str | None = None
     PLAYWRIGHT_COOKIE_DIR: str = "/data/cookies/"
+    PLAYWRIGHT_HEADLESS: bool = True
 
     # =====================================
     # COMPUTED PROPERTIES
