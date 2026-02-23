@@ -28,6 +28,18 @@ def test_get_optimized_headers_returns_user_agent_for_all_sources():
         print(f"OK: {source.name}: User-Agent applied correctly")
 
 
-# REMOVED: test_sources_list_contains_dd_news
-# DD News was removed from sources (persistent SSL/TLS connection failures)
-# See optimized_rss_processor.py line 106 for removal comment
+def test_sources_list_contains_all_eight_hindu_feeds():
+    """Test that all 8 curated Hindu feeds are in sources list"""
+    processor = OptimizedRSSProcessor()
+    # Assert total source count is 8
+    assert len(processor.sources) == 8, (
+        f"Expected 8 sources, got {len(processor.sources)}"
+    )
+
+    # Assert all sources are The Hindu feeds
+    for source in processor.sources:
+        assert "thehindu.com" in source.url, (
+            f"Non-Hindu source found: {source.name} ({source.url})"
+        )
+
+    print("OK: All 8 curated Hindu feeds present in sources list")
