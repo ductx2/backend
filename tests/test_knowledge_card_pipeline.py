@@ -1172,3 +1172,32 @@ class TestThresholdConfigurable:
         result = await pipeline.process_article(SAMPLE_ARTICLE)
         assert result is not None
         assert result["upsc_relevance"] == 50
+
+
+# ============================================================================
+# TESTS: MUST_KNOW_SOURCES updated with new curated institutional sources
+# ============================================================================
+
+
+class TestMustKnowSourcesUpdated:
+    """Verify MUST_KNOW_SOURCES contains 8 tuples including new Wave 2-3 sources."""
+
+    def test_must_know_sources_count(self):
+        from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
+
+        assert len(KnowledgeCardPipeline.MUST_KNOW_SOURCES) == 8
+
+    def test_mea_press_releases_is_must_know(self):
+        from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
+
+        assert ("mea", "press-releases") in KnowledgeCardPipeline.MUST_KNOW_SOURCES
+
+    def test_orf_expert_speak_is_must_know(self):
+        from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
+
+        assert ("orf", "expert-speak") in KnowledgeCardPipeline.MUST_KNOW_SOURCES
+
+    def test_rbi_economy_is_must_know(self):
+        from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
+
+        assert ("rbi", "economy") in KnowledgeCardPipeline.MUST_KNOW_SOURCES

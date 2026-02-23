@@ -29,6 +29,10 @@ class KnowledgeCardPipeline:
         ("indianexpress", "editorials"),
         ("hindu", "editorial"),
         ("hindu", "opinion"),
+        ("mea", "press-releases"),
+        ("orf", "expert-speak"),
+        ("idsa", "comment-briefs"),
+        ("rbi", "economy"),
     }
 
     def __init__(self) -> None:
