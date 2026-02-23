@@ -65,11 +65,22 @@ class SupplementarySources:
             "url": "https://rbi.org.in/Publication_rss.xml",
             "section": "economy",
         },
+        # GS-II Polity — Supreme Court, High Courts, legal analysis
+        {
+            "source_site": "barandbench",
+            "name": "Bar & Bench",
+            "url": "https://www.barandbench.com/stories.rss",
+            "section": "polity",
+        },
     ]
 
     def _parse_entry(self, entry: Any, source: dict[str, str]) -> dict[str, Any] | None:
         title = getattr(entry, "title", "").strip()
         if not title:
+            return None
+        # Filter out Dealstreet entries (business law, not UPSC-relevant)
+        tags = getattr(entry, 'tags', []) or []
+        if any('dealstreet' in (tag.get('term', '') or '').lower() for tag in tags):
             return None
 
         url = getattr(entry, "link", "").strip()

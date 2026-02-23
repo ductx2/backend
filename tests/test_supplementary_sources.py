@@ -30,7 +30,7 @@ def _make_entry(
     entry.description = summary or "Test summary content for article."
     # feedparser tags is a list of dicts with 'term' key
     if tags is not None:
-        entry.tags = [MagicMock(term=t) for t in tags]
+        entry.tags = [{'term': t, 'scheme': None, 'label': None} for t in tags]
     else:
         entry.tags = []
     return entry
@@ -79,7 +79,7 @@ class TestSourceConfiguration:
         self.ss = SupplementarySources()
 
     def test_three_sources_defined(self):
-        assert len(self.ss.SOURCES) == 7
+        assert len(self.ss.SOURCES) == 8
 
     def test_dte_source_configured(self):
         names = [s["source_site"] for s in self.ss.SOURCES]
@@ -391,7 +391,7 @@ class TestFetchAll:
         )
 
         result = self.ss.fetch_all()
-        assert len(result) == 14
+        assert len(result) == 16
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -420,8 +420,8 @@ class TestFetchAll:
         )
 
         result = self.ss.fetch_all()
-        # One source failed, remaining 6 sources succeeded with 1 article each → 6 total
-        assert len(result) == 6
+        # One source failed, remaining 7 sources succeeded with 1 article each → 7 total
+        assert len(result) == 7
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -498,8 +498,8 @@ class TestRBIFeeds:
         assert len(rbi_sources) == 4
 
     def test_total_source_count(self):
-        """Total SOURCES list should have 7 entries (3 existing + 4 RBI)."""
-        assert len(self.SOURCES) == 7
+        """Total SOURCES list should have 8 entries (3 existing + 4 RBI + 1 Bar & Bench)."""
+        assert len(self.SOURCES) == 8
 
     def test_rbi_feeds_urls(self):
         """All 4 RBI URLs should be present in SOURCES."""
@@ -539,3 +539,82 @@ class TestRBIFeeds:
         assert "Mozilla/5.0" in headers.get("User-Agent", ""), (
             f"User-Agent does not contain 'Mozilla/5.0': {headers.get('User-Agent')}"
         )
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests for Bar & Bench RSS feed
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestBarAndBench:
+    """Verify Bar & Bench RSS feed is configured and Dealstreet entries are filtered."""
+
+    def setup_method(self):
+        from app.services.supplementary_sources import SupplementarySources
+
+        self.ss = SupplementarySources()
+        self.SOURCES = self.ss.SOURCES
+        self.bb_source = next(
+            (s for s in self.SOURCES if s["source_site"] == "barandbench"), None
+        )
+
+    def test_barandbench_feed_present(self):
+        """SOURCES must contain an entry with source_site='barandbench' and section='polity'."""
+        assert self.bb_source is not None, "barandbench not found in SOURCES"
+        assert self.bb_source["section"] == "polity"
+
+    def test_barandbench_feed_url(self):
+        """Bar & Bench URL must be the stories RSS feed."""
+        assert self.bb_source is not None, "barandbench not found in SOURCES"
+        assert self.bb_source["url"] == "https://www.barandbench.com/stories.rss"
+
+    def test_total_source_count_after_barandbench(self):
+        """Total SOURCES must be at least 8 after adding Bar & Bench."""
+        assert len(self.SOURCES) >= 8
+
+    def test_dealstreet_entry_filtered(self):
+        """Entry with tag term='Dealstreet' must return None from _parse_entry."""
+        assert self.bb_source is not None, "barandbench not found in SOURCES"
+        entry = _make_entry(
+            "Dealstreet: Company X acquires Company Y",
+            "https://www.barandbench.com/dealstreet/article-1",
+            tags=["Dealstreet"],
+        )
+        result = self.ss._parse_entry(entry, self.bb_source)
+        assert result is None, "Dealstreet entry should be filtered out (return None)"
+
+    def test_dealstreet_filter_case_insensitive(self):
+        """Dealstreet filter must be case-insensitive."""
+        assert self.bb_source is not None, "barandbench not found in SOURCES"
+        entry = _make_entry(
+            "dealstreet: merger news",
+            "https://www.barandbench.com/dealstreet/article-2",
+            tags=["dealstreet"],
+        )
+        result = self.ss._parse_entry(entry, self.bb_source)
+        assert result is None, "Lowercase 'dealstreet' tag should also be filtered"
+
+    def test_judicial_entry_passes(self):
+        """Entry with tag term='Supreme Court' must pass through _parse_entry."""
+        assert self.bb_source is not None, "barandbench not found in SOURCES"
+        entry = _make_entry(
+            "Supreme Court upholds constitutional validity of Article 370 abrogation",
+            "https://www.barandbench.com/supreme-court/article-3",
+            tags=["Supreme Court"],
+        )
+        result = self.ss._parse_entry(entry, self.bb_source)
+        assert result is not None, "Judicial entry should NOT be filtered"
+        assert result["source_site"] == "barandbench"
+        assert result["section"] == "polity"
+
+    def test_entry_without_tags_passes(self):
+        """Entry with no tags at all must pass through (not filtered)."""
+        assert self.bb_source is not None, "barandbench not found in SOURCES"
+        entry = _make_entry(
+            "High Court order on electoral bonds",
+            "https://www.barandbench.com/high-court/article-4",
+            tags=[],
+        )
+        result = self.ss._parse_entry(entry, self.bb_source)
+        assert result is not None, "Entry without tags should NOT be filtered"
