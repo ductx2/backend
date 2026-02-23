@@ -23,18 +23,6 @@ _HEADERS = {
 class SupplementarySources:
     SOURCES: list[dict[str, str]] = [
         {
-            "source_site": "downtoearth",
-            "name": "Down To Earth",
-            "url": "https://www.downtoearth.org/rss/content",
-            "section": "environment",
-        },
-        {
-            "source_site": "businessstandard",
-            "name": "Business Standard - Economy",
-            "url": "https://www.business-standard.com/rss/economy-policy-1021.rss",
-            "section": "economy",
-        },
-        {
             "source_site": "prs",
             "name": "PRS Legislative Research",
             "url": "https://www.prsindia.org/parliamenttrack/rss",

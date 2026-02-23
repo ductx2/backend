@@ -71,28 +71,23 @@ class TestModuleImports:
 
 
 class TestSourceConfiguration:
-    """Verify the three sources are configured with correct metadata."""
-
+    """Verify the sources are configured with correct metadata."""
     def setup_method(self):
         from app.services.supplementary_sources import SupplementarySources
-
         self.ss = SupplementarySources()
 
-    def test_three_sources_defined(self):
-        assert len(self.ss.SOURCES) >= 9
-
-    def test_dte_source_configured(self):
-        names = [s["source_site"] for s in self.ss.SOURCES]
-        assert "downtoearth" in names
-
-    def test_business_standard_source_configured(self):
-        names = [s["source_site"] for s in self.ss.SOURCES]
-        assert "businessstandard" in names
-
+    def test_nine_sources_defined(self):
+        assert len(self.ss.SOURCES) == 9
     def test_prs_source_configured(self):
         names = [s["source_site"] for s in self.ss.SOURCES]
         assert "prs" in names
+    def test_dte_source_not_present(self):
+        names = [s["source_site"] for s in self.ss.SOURCES]
+        assert "downtoearth" not in names
 
+    def test_businessstandard_source_not_present(self):
+        names = [s["source_site"] for s in self.ss.SOURCES]
+        assert "businessstandard" not in names
     def test_each_source_has_required_keys(self):
         required = {"source_site", "name", "url", "section"}
         for source in self.ss.SOURCES:
@@ -100,16 +95,6 @@ class TestSourceConfiguration:
                 f"Source {source.get('source_site')} missing keys: "
                 f"{required - source.keys()}"
             )
-
-    def test_dte_url_is_rss(self):
-        dte = next(s for s in self.ss.SOURCES if s["source_site"] == "downtoearth")
-        assert "downtoearth.org" in dte["url"]
-
-    def test_bs_url_is_rss(self):
-        bs = next(s for s in self.ss.SOURCES if s["source_site"] == "businessstandard")
-        # Accept either feedburner or business-standard.com URL
-        assert "business-standard.com" in bs["url"] or "feedburner.com" in bs["url"]
-
     def test_prs_url_is_rss(self):
         prs = next(s for s in self.ss.SOURCES if s["source_site"] == "prs")
         assert "prsindia.org" in prs["url"]
@@ -125,20 +110,19 @@ class TestArticleDictFormat:
 
     def setup_method(self):
         from app.services.supplementary_sources import SupplementarySources
-
         self.ss = SupplementarySources()
-        self.dte_source = next(
-            s for s in self.ss.SOURCES if s["source_site"] == "downtoearth"
+        self.prs_source = next(
+            s for s in self.ss.SOURCES if s["source_site"] == "prs"
         )
 
     def test_parse_entry_returns_dict(self):
         entry = _make_entry("Test article title here", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert isinstance(result, dict)
 
     def test_parse_entry_has_all_required_keys(self):
         entry = _make_entry("Test article title here", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         required_keys = {
             "title",
             "url",
@@ -151,27 +135,27 @@ class TestArticleDictFormat:
 
     def test_parse_entry_title(self):
         entry = _make_entry("Climate change impacts India", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert result["title"] == "Climate change impacts India"
 
     def test_parse_entry_url(self):
         entry = _make_entry("Climate change", "https://dte.org/article/123")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert result["url"] == "https://dte.org/article/123"
 
     def test_parse_entry_source_site(self):
         entry = _make_entry("Title here", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
-        assert result["source_site"] == "downtoearth"
+        result = self.ss._parse_entry(entry, self.prs_source)
+        assert result["source_site"] == "prs"
 
     def test_parse_entry_section_from_source(self):
         entry = _make_entry("Title here", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
-        assert result["section"] == self.dte_source["section"]
+        result = self.ss._parse_entry(entry, self.prs_source)
+        assert result["section"] == self.prs_source["section"]
 
     def test_parse_entry_published_date_is_datetime(self):
         entry = _make_entry("Title here", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert isinstance(result["published_date"], datetime)
 
     def test_parse_entry_published_date_fallback_when_none(self):
@@ -179,7 +163,7 @@ class TestArticleDictFormat:
             "Title here", "https://dte.org/article/1", published_parsed=None
         )
         entry.published_parsed = None
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         # Should fallback to current time (not raise)
         assert isinstance(result["published_date"], datetime)
 
@@ -187,7 +171,7 @@ class TestArticleDictFormat:
         entry = _make_entry("Title here", "https://dte.org/article/1")
         # Simulate missing author
         entry.get.return_value = None
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         # author is None or a string — not required to be non-None
         assert result["author"] is None or isinstance(result["author"], str)
 
@@ -198,17 +182,17 @@ class TestArticleDictFormat:
         entry.get.side_effect = (
             lambda key, default=None: "Jane Doe" if key == "author" else default
         )
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert result["author"] == "Jane Doe"
 
     def test_parse_entry_returns_none_for_empty_title(self):
         entry = _make_entry("", "https://dte.org/article/1")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert result is None
 
     def test_parse_entry_returns_none_for_missing_url(self):
         entry = _make_entry("Some title here", "")
-        result = self.ss._parse_entry(entry, self.dte_source)
+        result = self.ss._parse_entry(entry, self.prs_source)
         assert result is None
 
 
@@ -224,8 +208,8 @@ class TestFetchSource:
         from app.services.supplementary_sources import SupplementarySources
 
         self.ss = SupplementarySources()
-        self.dte_source = next(
-            s for s in self.ss.SOURCES if s["source_site"] == "downtoearth"
+        self.prs_source = next(
+            s for s in self.ss.SOURCES if s["source_site"] == "prs"
         )
 
     @patch("app.services.supplementary_sources.feedparser")
@@ -245,7 +229,7 @@ class TestFetchSource:
         )
         mock_feedparser.parse.return_value = mock_feed
 
-        result = self.ss._fetch_source(self.dte_source)
+        result = self.ss._fetch_source(self.prs_source)
         assert isinstance(result, list)
 
     @patch("app.services.supplementary_sources.feedparser")
@@ -265,7 +249,7 @@ class TestFetchSource:
         )
         mock_feedparser.parse.return_value = mock_feed
 
-        result = self.ss._fetch_source(self.dte_source)
+        result = self.ss._fetch_source(self.prs_source)
         assert len(result) == 3
 
     @patch("app.services.supplementary_sources.feedparser")
@@ -279,8 +263,8 @@ class TestFetchSource:
         mock_feed = _make_feed([_make_entry("Article A", "https://dte.org/a")])
         mock_feedparser.parse.return_value = mock_feed
 
-        result = self.ss._fetch_source(self.dte_source)
-        assert result[0]["source_site"] == "downtoearth"
+        result = self.ss._fetch_source(self.prs_source)
+        assert result[0]["source_site"] == "prs"
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -290,7 +274,7 @@ class TestFetchSource:
         """If requests raises, return empty list (don't crash)."""
         mock_requests.get.side_effect = Exception("Connection refused")
 
-        result = self.ss._fetch_source(self.dte_source)
+        result = self.ss._fetch_source(self.prs_source)
         assert result == []
 
     @patch("app.services.supplementary_sources.feedparser")
@@ -303,7 +287,7 @@ class TestFetchSource:
         mock_response.raise_for_status.side_effect = Exception("404 Not Found")
         mock_requests.get.return_value = mock_response
 
-        result = self.ss._fetch_source(self.dte_source)
+        result = self.ss._fetch_source(self.prs_source)
         assert result == []
 
     @patch("app.services.supplementary_sources.feedparser")
@@ -320,7 +304,7 @@ class TestFetchSource:
         mock_feed = _make_feed([])
         mock_feedparser.parse.return_value = mock_feed
 
-        result = self.ss._fetch_source(self.dte_source)
+        result = self.ss._fetch_source(self.prs_source)
         assert result == []
 
     @patch("app.services.supplementary_sources.feedparser")
@@ -340,7 +324,7 @@ class TestFetchSource:
         )
         mock_feedparser.parse.return_value = mock_feed
 
-        result = self.ss._fetch_source(self.dte_source)
+        result = self.ss._fetch_source(self.prs_source)
         assert len(result) == 1
         assert result[0]["title"] == "Good Article Here"
 
@@ -382,16 +366,15 @@ class TestFetchAll:
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
-        # Each call returns 2 articles → 11 sources × 2 = 22 total
+        # Each call returns 2 articles → 9 sources × 2 = 18 total
         mock_feedparser.parse.return_value = _make_feed(
             [
                 _make_entry("Article 1", "https://example.com/1"),
                 _make_entry("Article 2", "https://example.com/2"),
             ]
         )
-
         result = self.ss.fetch_all()
-        assert len(result) == 22
+        assert len(result) == 18
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -420,8 +403,8 @@ class TestFetchAll:
         )
 
         result = self.ss.fetch_all()
-        # One source failed, remaining 10 sources succeeded with 1 article each → 10 total
-        assert len(result) == 10
+        # One source failed, remaining 8 sources succeeded with 1 article each → 8 total
+        assert len(result) == 8
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -441,8 +424,8 @@ class TestFetchAll:
 
         result = self.ss.fetch_all()
         source_sites = {a["source_site"] for a in result}
-        assert "downtoearth" in source_sites
-        assert "businessstandard" in source_sites
+        assert "downtoearth" not in source_sites
+        assert "businessstandard" not in source_sites
         assert "prs" in source_sites
 
     @patch("app.services.supplementary_sources.feedparser")
