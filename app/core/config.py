@@ -156,6 +156,14 @@ class Settings(BaseSettings):
         default="INFO", description="Logging level (DEBUG/INFO/WARNING/ERROR)"
     )
 
+
+    # Playwright Session Configuration
+    HINDU_EMAIL: str | None = None
+    HINDU_PASSWORD: str | None = None
+    IE_EMAIL: str | None = None
+    IE_PASSWORD: str | None = None
+    PLAYWRIGHT_COOKIE_DIR: str = "/data/cookies/"
+
     # =====================================
     # COMPUTED PROPERTIES
     # =====================================
