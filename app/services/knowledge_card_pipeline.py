@@ -8,6 +8,9 @@ No database writes here — that's T14.
 """
 
 import logging
+import hashlib
+import json
+import random
 from app.core.config import settings
 from typing import Any, Optional
 
@@ -97,6 +100,154 @@ class KnowledgeCardPipeline:
             "syllabus_matches": syllabus_matches,
             "raw_pass1_data": data,
         }
+
+    # ------------------------------------------------------------------
+    # Pass 1 Batch — Batch scoring via UPSC_BATCH_ANALYSIS
+    # ------------------------------------------------------------------
+
+    async def run_pass1_batch(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Batch-score multiple articles via UPSC_BATCH_ANALYSIS (10 per call, 2 shuffled passes).
+        
+        Returns list of dicts with SAME shape as run_pass1() for each article.
+        MUST_KNOW articles that fail batch scoring fall back to individual run_pass1().
+        Non-MUST_KNOW articles that fail batch scoring are skipped.
+        """
+        BATCH_SIZE = 10
+        results: list[dict[str, Any]] = []
+        batches = [articles[i:i+BATCH_SIZE] for i in range(0, len(articles), BATCH_SIZE)]
+
+        # Helper to build payload JSON
+        def build_payload(ordered_articles: list[dict[str, Any]], ordered_ids: list[str]) -> str:
+            return json.dumps({
+                "articles": [
+                    {
+                        "article_id": aid,
+                        "title": a.get("title", ""),
+                        "content": (a.get("content") or "")[:500]
+                    }
+                    for aid, a in zip(ordered_ids, ordered_articles)
+                ]
+            })
+
+        # Helper to call batch LLM
+        async def call_batch(payload: str):
+            return await llm_service.process_request(
+                LLMRequest(
+                    task_type=TaskType.UPSC_BATCH_ANALYSIS,
+                    content=payload,
+                    provider_preference=ProviderPreference.COST_OPTIMIZED,
+                    temperature=0.1,
+                )
+            )
+
+        for batch_idx, batch in enumerate(batches):
+            # Build stable article IDs (URL hash → 8 chars)
+            batch_with_ids: list[tuple[str, dict[str, Any]]] = [
+                (hashlib.md5(a.get('url', a.get('source_url', '')).encode()).hexdigest()[:8], a)
+                for a in batch
+            ]
+            id_to_article: dict[str, dict[str, Any]] = {aid: a for aid, a in batch_with_ids}
+
+            # Pass A: original order
+            pass_a_ids = [aid for aid, _ in batch_with_ids]
+            pass_a_articles = [a for _, a in batch_with_ids]
+            pass_a_payload = build_payload(pass_a_articles, pass_a_ids)
+
+            # Pass B: shuffled order (seed 42 for test determinism)
+            random.seed(42)
+            pass_b_indices = random.sample(range(len(batch)), len(batch))
+            pass_b_articles = [batch_with_ids[i][1] for i in pass_b_indices]
+            pass_b_ids = [batch_with_ids[i][0] for i in pass_b_indices]
+            pass_b_payload = build_payload(pass_b_articles, pass_b_ids)
+
+            # Run LLM calls sequentially (no asyncio.gather)
+            try:
+                resp_a = await call_batch(pass_a_payload)
+                if not resp_a.success:
+                    raise RuntimeError(f"Pass A failed: {resp_a.error_message}")
+                resp_b = await call_batch(pass_b_payload)
+                if not resp_b.success:
+                    raise RuntimeError(f"Pass B failed: {resp_b.error_message}")
+            except Exception as exc:
+                # Retry once
+                logger.warning("[Pass1Batch] Batch %d/%d failed (%s), retrying...", batch_idx + 1, len(batches), exc)
+                try:
+                    resp_a = await call_batch(pass_a_payload)
+                    if not resp_a.success:
+                        raise RuntimeError(f"Pass A retry failed: {resp_a.error_message}")
+                    resp_b = await call_batch(pass_b_payload)
+                    if not resp_b.success:
+                        raise RuntimeError(f"Pass B retry failed: {resp_b.error_message}")
+                except Exception as retry_exc:
+                    # Fallback: MUST_KNOW → individual run_pass1(), others skipped
+                    must_know_count = sum(1 for _, a in batch_with_ids if self._is_must_know(a))
+                    logger.warning(
+                        "[Pass1Batch] Batch %d/%d failed after retry, falling back for %d MUST_KNOW articles",
+                        batch_idx + 1, len(batches), must_know_count
+                    )
+                    for aid, article in batch_with_ids:
+                        if self._is_must_know(article):
+                            try:
+                                pass1_result = await self.run_pass1(article)
+                                results.append(pass1_result)
+                            except Exception as ind_exc:
+                                logger.error("[Pass1Batch] Individual fallback failed for %s: %s", article.get("title"), ind_exc)
+                    continue
+
+            # Build score maps from LLM responses
+            # resp_a.data = {"articles": [{"article_id": ..., "upsc_relevance": int, ...}]}
+            a_scored: dict[str, dict[str, Any]] = {
+                art["article_id"]: art
+                for art in resp_a.data.get("articles", [])
+                if "article_id" in art
+            }
+            b_scored: dict[str, dict[str, Any]] = {
+                art["article_id"]: art
+                for art in resp_b.data.get("articles", [])
+                if "article_id" in art
+            }
+
+            # For each article in batch, average scores
+            for aid, article in batch_with_ids:
+                a_data = a_scored.get(aid)
+                b_data = b_scored.get(aid)
+
+                if a_data is None and b_data is None:
+                    logger.warning("[Pass1Batch] Article %s missing from both pass responses, skipping", aid)
+                    continue
+
+                # Use whichever pass has data; average if both present
+                if a_data is not None and b_data is not None:
+                    score_a = a_data.get("upsc_relevance", 0)
+                    score_b = b_data.get("upsc_relevance", 0)
+                    averaged_score = round((score_a + score_b) / 2)
+                elif a_data is not None:
+                    averaged_score = a_data.get("upsc_relevance", 0)
+                else:
+                    averaged_score = b_data.get("upsc_relevance", 0)
+
+                # Non-numeric fields from Pass A (fall back to B if A missing)
+                primary_data = a_data if a_data is not None else b_data
+                relevant_papers: list[str] = primary_data.get("relevant_papers", [])
+                key_topics: list[str] = primary_data.get("key_topics", [])
+
+                # Syllabus matching
+                syllabus_text = f"{article.get('title', '')} {article.get('content', '')}"
+                syllabus_matches = self.syllabus_service.match_topics(
+                    text=syllabus_text,
+                    keywords=key_topics,
+                )
+
+                results.append({
+                    "upsc_relevance": averaged_score,
+                    "gs_paper": relevant_papers[0] if relevant_papers else "GS2",
+                    "key_facts": key_topics,
+                    "keywords": key_topics,
+                    "syllabus_matches": syllabus_matches,
+                    "raw_pass1_data": primary_data,
+                })
+
+        return results
 
     # ------------------------------------------------------------------
     # Pass 2 — Full 5-Layer Knowledge Card

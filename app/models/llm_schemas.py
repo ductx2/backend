@@ -11,6 +11,7 @@ class TaskType(str, Enum):
     ANSWER_EVALUATION = "answer_evaluation"
     DEDUPLICATION = "deduplication"
     KNOWLEDGE_CARD = "knowledge_card"
+    UPSC_BATCH_ANALYSIS = "upsc_batch_analysis"
 
 class ProviderPreference(str, Enum):
     COST_OPTIMIZED = "cost_optimized"    # Free/cheap models first

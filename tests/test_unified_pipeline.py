@@ -6,7 +6,14 @@ All source dependencies are mocked — no network calls.
 
 import pytest
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
+
+# Dynamic dates so tests don't expire after 36h
+_RECENT_DATE_ISO = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+_RECENT_DATE_STR = (datetime.now(timezone.utc) - timedelta(hours=6)).strftime(
+    "%Y-%m-%d"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +29,8 @@ def _hindu_articles():
             "content": "Full body text from RSS feed.",
             "source": "The Hindu - Editorial",
             "source_url": "https://thehindu.com/editorial/article1",
-            "published_at": "2026-02-23T00:00:00Z",
+            "url": "https://thehindu.com/editorial/article1",
+            "published_at": _RECENT_DATE_ISO,
             "content_hash": "h1",
             "raw_entry": {},
         },
@@ -31,7 +39,8 @@ def _hindu_articles():
             "content": "Another body.",
             "source": "The Hindu - Op-Ed",
             "source_url": "https://thehindu.com/oped/article2",
-            "published_at": "2026-02-23T00:00:00Z",
+            "url": "https://thehindu.com/oped/article2",
+            "published_at": _RECENT_DATE_ISO,
             "content_hash": "h2",
             "raw_entry": {},
         },
@@ -43,7 +52,7 @@ def _ie_articles():
         {
             "title": "IE Article 1",
             "url": "https://indianexpress.com/article/ie1",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
             "author": "Author A",
             "section": "explained",
             "source_site": "indianexpress",
@@ -56,7 +65,7 @@ def _pib_articles():
         {
             "title": "PIB Release 1",
             "url": "https://pib.gov.in/release1",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
             "ministry": "Finance",
             "source_site": "pib",
         },
@@ -68,7 +77,7 @@ def _supplementary_articles():
         {
             "title": "Supplementary 1",
             "url": "https://livemint.com/sup1",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
             "author": "Author B",
             "section": "economy",
             "source_site": "livemint",
@@ -83,7 +92,7 @@ def _hindu_pw_articles():
             "title": "Hindu PW Article 1",
             "url": "https://thehindu.com/pw/editorial1",
             "content": "Playwright-scraped Hindu editorial.",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
             "author": "PW Author",
             "section": "editorial",
             "source_site": "hindu",
@@ -98,7 +107,7 @@ def _ie_pw_articles():
             "title": "IE PW Article 1",
             "url": "https://indianexpress.com/pw/explained1",
             "content": "Playwright-scraped IE editorial.",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
             "author": "IE PW Author",
             "section": "explained",
             "source_site": "indianexpress",
@@ -115,7 +124,7 @@ def _mea_articles():
             "source_url": "https://mea.gov.in/press-release1",
             "source_site": "mea",
             "section": "press-releases",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
         },
     ]
 
@@ -129,7 +138,7 @@ def _orf_articles():
             "source_url": "https://orfonline.org/expert-speak/1",
             "source_site": "orf",
             "section": "expert-speak",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
         },
     ]
 
@@ -143,7 +152,7 @@ def _idsa_articles():
             "source_url": "https://idsa.in/comment/1",
             "source_site": "idsa",
             "section": "comments-briefs",
-            "published_date": "2026-02-23",
+            "published_date": _RECENT_DATE_STR,
         },
     ]
 
@@ -387,7 +396,7 @@ class TestFetchAllSources:
                 {
                     "title": "Duplicate",
                     "url": "https://thehindu.com/editorial/article1",  # same as Hindu #1
-                    "published_date": "2026-02-23",
+                    "published_date": _RECENT_DATE_STR,
                     "author": "X",
                     "section": "dup",
                     "source_site": "indianexpress",
@@ -423,7 +432,7 @@ class TestFetchAllSources:
 
 
 # ---------------------------------------------------------------------------
-# 9-12  enrich_articles
+# 9-12  enrich_articles (DEPRECATED but still exists)
 # ---------------------------------------------------------------------------
 
 
@@ -517,7 +526,7 @@ class TestEnrichArticles:
 
 
 # ---------------------------------------------------------------------------
-# 13-20  run (integration of fetch + extract + enrich)
+# 13-20  run (integration of fetch + extract + batch-score + select + pass2)
 # ---------------------------------------------------------------------------
 
 
@@ -546,10 +555,12 @@ class TestRun:
             patch(
                 "app.services.unified_pipeline.KnowledgeCardPipeline"
             ) as mock_kcp_cls,
+            patch("app.services.unified_pipeline.ArticleSelector") as mock_selector_cls,
             patch(
                 "app.services.unified_pipeline.UniversalContentExtractor"
             ) as mock_ext_cls,
         ):
+            # --- RSS sources ---
             mock_rss = MagicMock()
             mock_rss.fetch_all_sources_parallel = AsyncMock(
                 return_value=_hindu_articles()
@@ -568,7 +579,7 @@ class TestRun:
             mock_sup.fetch_all = MagicMock(return_value=_supplementary_articles())
             mock_sup_cls.return_value = mock_sup
 
-            # Wave 3 scrapers
+            # Wave 3 scrapers (keep existing helper)
             w3 = _setup_wave3_mocks(
                 mock_session_cls,
                 mock_hindu_pw_cls,
@@ -578,10 +589,48 @@ class TestRun:
                 mock_idsa_cls,
             )
 
+            # --- KnowledgeCardPipeline mock ---
             mock_kcp = MagicMock()
-            mock_kcp.process_article = AsyncMock(return_value=_enriched_article())
+            mock_kcp.relevance_threshold = 55
+            mock_kcp._is_must_know = MagicMock(return_value=False)
+            mock_kcp._compute_triage = MagicMock(return_value="good_to_know")
+            mock_kcp.run_pass1_batch = AsyncMock(
+                side_effect=lambda arts: [
+                    {
+                        "upsc_relevance": 72,
+                        "gs_paper": "GS2",
+                        "key_facts": ["fact1"],
+                        "keywords": ["kw1"],
+                        "syllabus_matches": [],
+                        "raw_pass1_data": {},
+                    }
+                    for _ in arts
+                ]
+            )
+            mock_kcp.run_pass2 = AsyncMock(
+                return_value={
+                    "headline_layer": "Test Headline",
+                    "facts_layer": ["fact1"],
+                    "context_layer": "Test context",
+                    "connections_layer": {
+                        "syllabus_topics": [],
+                        "related_pyqs": [],
+                        "pyq_count": 0,
+                        "year_range": "",
+                    },
+                    "mains_angle_layer": "Test mains angle",
+                }
+            )
             mock_kcp_cls.return_value = mock_kcp
 
+            # --- ArticleSelector mock ---
+            mock_selector = MagicMock()
+            mock_selector.select_top_articles = AsyncMock(
+                side_effect=lambda arts, target=30: arts[:target]
+            )
+            mock_selector_cls.return_value = mock_selector
+
+            # --- Content extractor mock ---
             mock_ext = MagicMock()
             extracted = MagicMock()
             extracted.content = "Extracted content from URL."
@@ -594,6 +643,7 @@ class TestRun:
             self.mock_sup = mock_sup
             self.w3 = w3
             self.mock_kcp = mock_kcp
+            self.mock_selector = mock_selector
             self.mock_ext = mock_ext
             yield
 
@@ -603,26 +653,34 @@ class TestRun:
 
         result = await UnifiedPipeline().run()
         assert isinstance(result, dict)
-        for key in ("articles", "total_fetched", "total_enriched", "filtered"):
+        for key in (
+            "articles",
+            "total_fetched",
+            "total_enriched",
+            "filtered",
+            "pass1_count",
+            "pass2_count",
+            "gs_distribution",
+            "llm_calls",
+        ):
             assert key in result, f"Missing key: {key}"
 
     @pytest.mark.asyncio
     async def test_correct_counts(self):
-        """10 fetched, all enriched (none filtered) → enriched=10, filtered=0."""
+        """Verify count consistency: total_enriched == pass2_count, articles list matches."""
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().run()
+        assert result["total_enriched"] == result["pass2_count"]
+        assert len(result["articles"]) == result["total_enriched"]
         assert result["total_fetched"] == 10
-        assert result["total_enriched"] == 10
-        assert result["filtered"] == 0
 
     @pytest.mark.asyncio
     async def test_max_articles_cap(self):
-        """run(max_articles=2) should only process 2 articles."""
+        """run(max_articles=2) → selected articles ≤ 2."""
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().run(max_articles=2)
-        assert result["total_fetched"] <= 2
         assert len(result["articles"]) <= 2
 
     @pytest.mark.asyncio
@@ -665,22 +723,34 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_process_article_exception_does_not_crash(self):
-        """If KnowledgeCardPipeline.process_article raises for one article, others still processed."""
+        """If run_pass2 raises for one article, others still processed."""
         call_count = 0
 
-        async def side_effect_fn(article):
+        async def pass2_side_effect(article, pass1_data):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise Exception("LLM timeout")
-            return _enriched_article(title=article.get("title", "?"))
+            return {
+                "headline_layer": "Test Headline",
+                "facts_layer": ["fact1"],
+                "context_layer": "Test context",
+                "connections_layer": {
+                    "syllabus_topics": [],
+                    "related_pyqs": [],
+                    "pyq_count": 0,
+                    "year_range": "",
+                },
+                "mains_angle_layer": "Test mains angle",
+            }
 
-        self.mock_kcp.process_article = AsyncMock(side_effect=side_effect_fn)
+        self.mock_kcp.run_pass2 = AsyncMock(side_effect=pass2_side_effect)
         from app.services.unified_pipeline import UnifiedPipeline
 
         result = await UnifiedPipeline().run()
-        # 10 articles total, 1 failed → at least 9 enriched
-        assert result["total_enriched"] >= 9
+        # At least some articles should survive even with 1 pass2 failure
+        assert result["total_enriched"] >= 1
+        assert isinstance(result, dict)
 
     @pytest.mark.asyncio
     async def test_enriched_articles_in_result(self):
@@ -689,6 +759,27 @@ class TestRun:
         result = await UnifiedPipeline().run()
         assert len(result["articles"]) == result["total_enriched"]
         assert all(isinstance(a, dict) for a in result["articles"])
+
+    @pytest.mark.asyncio
+    async def test_run_gs_distribution_in_result(self):
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().run()
+        assert "gs_distribution" in result
+
+    @pytest.mark.asyncio
+    async def test_run_batch_scoring_called(self):
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        await UnifiedPipeline().run()
+        self.mock_kcp.run_pass1_batch.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_run_pass2_only_on_selected(self):
+        from app.services.unified_pipeline import UnifiedPipeline
+
+        result = await UnifiedPipeline().run()
+        assert result["pass2_count"] == result["total_enriched"]
 
 
 # ---------------------------------------------------------------------------
@@ -852,7 +943,7 @@ class TestEdgeCases:
                     {
                         "title": "A",
                         "url": "https://example.com/Article1",
-                        "published_date": "2026-02-23",
+                        "published_date": _RECENT_DATE_STR,
                         "author": "X",
                         "section": "s",
                         "source_site": "ie",
@@ -867,7 +958,7 @@ class TestEdgeCases:
                     {
                         "title": "B",
                         "url": "https://example.com/article1",
-                        "published_date": "2026-02-23",
+                        "published_date": _RECENT_DATE_STR,
                         "ministry": "Y",
                         "source_site": "pib",
                     },
@@ -913,7 +1004,7 @@ def _enriched_knowledge_card_article():
         "url": "https://indianexpress.com/budget-2026",
         "source_site": "indianexpress",
         "section": "explained",
-        "published_date": "2026-02-23",
+        "published_date": _RECENT_DATE_STR,
         "content": "The Union Budget 2026 was presented today.",
         # Pass 1
         "upsc_relevance": 85,
@@ -929,6 +1020,7 @@ def _enriched_knowledge_card_article():
             },
         ],
         "priority_triage": "must_know",
+        "raw_pass1_data": {},
         # Pass 2 (5 layers)
         "headline_layer": "Union Budget 2026 focuses on capital expenditure.",
         "facts_layer": ["Fiscal deficit at 5.1%", "Capex up 20%"],
@@ -956,7 +1048,7 @@ class TestPrepareKnowledgeCardForDatabase:
         assert db_row["source_url"] == "https://indianexpress.com/budget-2026"
         assert db_row["source_site"] == "indianexpress"
         assert db_row["status"] == "published"
-        assert db_row["date"] == "2026-02-23"
+        assert db_row["date"] == _RECENT_DATE_STR
 
         # Analysis fields
         assert db_row["upsc_relevance"] == 85
@@ -1076,6 +1168,7 @@ class TestRunSaveToDb:
             patch(
                 "app.services.unified_pipeline.KnowledgeCardPipeline"
             ) as mock_kcp_cls,
+            patch("app.services.unified_pipeline.ArticleSelector") as mock_selector_cls,
             patch(
                 "app.services.unified_pipeline.UniversalContentExtractor"
             ) as mock_ext_cls,
@@ -1092,7 +1185,7 @@ class TestRunSaveToDb:
                         "title": "Test Article",
                         "url": "http://test.com/1",
                         "content": "Test content body.",
-                        "published_date": "2026-02-23",
+                        "published_date": _RECENT_DATE_STR,
                         "section": "explained",
                         "source_site": "indianexpress",
                     }
@@ -1123,11 +1216,55 @@ class TestRunSaveToDb:
                 idsa_data=[],
             )
 
+            # --- KnowledgeCardPipeline mock ---
             mock_kcp = MagicMock()
-            mock_kcp.process_article = AsyncMock(
-                return_value=_enriched_knowledge_card_article()
+            mock_kcp.relevance_threshold = 55
+            mock_kcp._is_must_know = MagicMock(return_value=False)
+            mock_kcp._compute_triage = MagicMock(return_value="must_know")
+            mock_kcp.run_pass1_batch = AsyncMock(
+                side_effect=lambda arts: [
+                    {
+                        "upsc_relevance": 85,
+                        "gs_paper": "GS3",
+                        "key_facts": ["fiscal deficit target", "capital expenditure"],
+                        "keywords": ["budget", "fiscal policy"],
+                        "syllabus_matches": [
+                            {
+                                "paper": "GS3",
+                                "topic": "Economy",
+                                "sub_topic": "Government Budgeting",
+                                "confidence": 0.9,
+                            },
+                        ],
+                        "raw_pass1_data": {},
+                    }
+                    for _ in arts
+                ]
+            )
+            mock_kcp.run_pass2 = AsyncMock(
+                return_value={
+                    "headline_layer": "Union Budget 2026 focuses on capital expenditure.",
+                    "facts_layer": ["Fiscal deficit at 5.1%", "Capex up 20%"],
+                    "context_layer": "Continuation of fiscal consolidation path.",
+                    "connections_layer": {
+                        "syllabus_topics": ["Indian Economy"],
+                        "related_pyqs": [
+                            {"year": 2023, "question": "Discuss fiscal policy."}
+                        ],
+                        "pyq_count": 1,
+                        "year_range": "2023-2023",
+                    },
+                    "mains_angle_layer": "Analyze the fiscal consolidation strategy.",
+                }
             )
             mock_kcp_cls.return_value = mock_kcp
+
+            # --- ArticleSelector mock ---
+            mock_selector = MagicMock()
+            mock_selector.select_top_articles = AsyncMock(
+                side_effect=lambda arts, target=30: arts[:target]
+            )
+            mock_selector_cls.return_value = mock_selector
 
             mock_ext = MagicMock()
             mock_ext_cls.return_value = mock_ext

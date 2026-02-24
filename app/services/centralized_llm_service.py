@@ -188,26 +188,6 @@ class CentralizedLLMService:
                     "exam_tip",
                 ],
             },
-            "knowledge_card": {
-                "type": "object",
-                "properties": {
-                    "headline_layer": {"type": "string"},
-                    "facts_layer": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "minItems": 3,
-                        "maxItems": 5,
-                    },
-                    "context_layer": {"type": "string"},
-                    "mains_angle_layer": {"type": "string"},
-                },
-                "required": [
-                    "headline_layer",
-                    "facts_layer",
-                    "context_layer",
-                    "mains_angle_layer",
-                ],
-            },
         }
 
     async def initialize_router(self):
@@ -353,6 +333,7 @@ class CentralizedLLMService:
             TaskType.ANSWER_EVALUATION: self._handle_answer_evaluation,
             TaskType.DEDUPLICATION: self._handle_deduplication,
             TaskType.KNOWLEDGE_CARD: self._handle_knowledge_card,
+            TaskType.UPSC_BATCH_ANALYSIS: self._handle_upsc_batch_analysis,
         }
 
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
@@ -415,7 +396,7 @@ class CentralizedLLMService:
     async def _handle_content_extraction(
         self, request: LLMRequest, model: str
     ) -> Dict[str, Any]:
-        """Handle content extraction tasks (RSS scraping)"""
+        """Handle content extraction tasks (RSS, Drishti scraping)"""
 
         prompt = f"""You are an expert content analyst extracting news articles for UPSC preparation.
         This is legitimate educational content for civil service exam preparation.
@@ -649,6 +630,248 @@ class CentralizedLLMService:
             logger.error(f"UPSC analysis failed: {e}")
             raise
 
+
+    async def _handle_knowledge_card(
+        self, request: LLMRequest, model: str
+    ) -> Dict[str, Any]:
+        """Handle UPSC knowledge card generation (Pass 2).
+
+        Produces the 4 LLM-generated layers consumed by run_pass2():
+          - headline_layer   : punchy exam-ready headline
+          - facts_layer      : bullet facts for quick revision
+          - context_layer    : deeper analytical context
+          - mains_angle_layer: Mains answer-writing angle
+        connections_layer is assembled by Python (NOT by this handler).
+        """
+
+        prompt = f"""You are an elite UPSC Mains content strategist.
+Your task is to create a high-quality knowledge card for a current affairs article.
+
+{request.content}
+
+{request.custom_instructions or ""}
+
+Generate a 4-layer knowledge card optimised for UPSC Civil Services (Prelims + Mains):
+
+LAYER 1 – HEADLINE (headline_layer):
+  A single, punchy sentence (≤15 words) that captures the exam-relevant essence.
+  Focus on WHY it matters for UPSC, not just what happened.
+
+LAYER 2 – KEY FACTS (facts_layer):
+  5–7 crisp bullet facts a student must memorise.
+  Each fact must be self-contained, specific, and exam-relevant.
+  Include numbers, dates, organisations, acts, or constitutional articles where applicable.
+
+LAYER 3 – CONTEXT & ANALYSIS (context_layer):
+  2–3 sentences of background context explaining the issue in the UPSC syllabus framework.
+  Connect to broader themes (governance, polity, economy, environment, etc.).
+
+LAYER 4 – MAINS ANGLE (mains_angle_layer):
+  1–2 sentences framing this topic as a Mains answer.
+  Suggest the GS paper and a likely question direction.
+"""
+
+        knowledge_card_schema = {{
+            "type": "object",
+            "properties": {{
+                "headline_layer": {{"type": "string"}},
+                "facts_layer": {{
+                    "type": "array",
+                    "items": {{"type": "string"}},
+                    "minItems": 5,
+                }},
+                "context_layer": {{"type": "string"}},
+                "mains_angle_layer": {{"type": "string"}},
+            }},
+            "required": [
+                "headline_layer",
+                "facts_layer",
+                "context_layer",
+                "mains_angle_layer",
+            ],
+        }}
+
+        knowledge_card_response_format = {{
+            "type": "json",
+            "name": "knowledge_card",
+            "description": "4-layer UPSC knowledge card for current affairs article",
+            "schema": knowledge_card_schema,
+        }}
+
+        try:
+            response = await self._direct_completion(
+                model=model,
+                messages=[{{"role": "user", "content": prompt}}],
+                response_format=knowledge_card_response_format,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+
+            response_text = response.choices[0].message.content
+            if not response_text:
+                raise ValueError("Empty response from LLM")
+
+            clean_json = strip_markdown_json(response_text)
+            result_data = json.loads(clean_json)
+            logger.info(
+                f"✅ [Knowledge Card] Structured response received from {{response.model}}"
+            )
+
+            return {{
+                "provider_used": response.model,
+                "model_used": response.model,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "estimated_cost": 0.0,
+                "data": result_data,
+            }}
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed for knowledge card: {{e}}")
+            logger.error(f"Response text: {{response_text}}")
+            raise
+        except Exception as e:
+            logger.error(f"Knowledge card generation failed: {{e}}")
+            raise
+
+    async def _handle_upsc_batch_analysis(
+        self, request: LLMRequest, model: str
+    ) -> Dict[str, Any]:
+        """Handle batch UPSC relevance scoring of multiple articles in one LLM call.
+        
+        request.content: JSON string containing {"articles": [{"article_id", "title", "content"}, ...]}
+        Returns: {"provider_used", "model_used", "tokens_used", "estimated_cost", "data": {"articles": [...]}}
+        """
+
+        prompt = f"""You are a UPSC Civil Services expert scoring multiple articles for exam relevance.
+
+Batch of articles to score:
+{request.content}
+
+For EACH article in the batch, follow this reasoning chain:
+1. Identify which UPSC syllabus topic it maps to (e.g., "GS2/Polity/Parliament", "GS3/Economy/Monetary Policy")
+2. Assess: Could this appear as a UPSC Prelims fact, Mains question, or Current Affairs question?
+3. Score 1-100 based on: syllabus relevance (40%), question potential (30%), factual density (30%)
+
+Scoring guide:
+- 1-30: Low relevance (general news, not in UPSC syllabus)
+- 31-60: Medium relevance (useful context, may appear as passing reference)
+- 61-85: High relevance (directly in UPSC syllabus, exam important)
+- 86-100: Critical relevance (must-know, high chance of Prelims/Mains question)
+
+For each article, return:
+- article_id: the exact article_id provided
+- upsc_relevance: integer 1-100
+- relevant_papers: which GS papers (at least one of GS1, GS2, GS3, GS4)
+- key_topics: 3-7 specific UPSC-relevant topics extracted from the article
+- importance_level: Low / Medium / High / Critical
+- question_potential: Low / Medium / High
+- category: politics / economy / international / science / environment / society / defence / schemes
+- summary: 1-2 sentence summary of the article's UPSC relevance
+
+{request.custom_instructions or ""}"""
+
+        # Batch analysis schema — wraps array in object for GPT-OSS-120B compatibility
+        upsc_batch_schema = {
+            "type": "object",
+            "properties": {
+                "articles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "article_id": {"type": "string"},
+                            "upsc_relevance": {"type": "integer", "minimum": 1, "maximum": 100},
+                            "relevant_papers": {
+                                "type": "array",
+                                "items": {"type": "string", "enum": ["GS1", "GS2", "GS3", "GS4"]},
+                                "minItems": 1,
+                            },
+                            "key_topics": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "minItems": 3,
+                            },
+                            "importance_level": {
+                                "type": "string",
+                                "enum": ["Low", "Medium", "High", "Critical"],
+                            },
+                            "question_potential": {
+                                "type": "string",
+                                "enum": ["Low", "Medium", "High"],
+                            },
+                            "category": {
+                                "type": "string",
+                                "enum": [
+                                    "politics",
+                                    "economy",
+                                    "international",
+                                    "science",
+                                    "environment",
+                                    "society",
+                                    "defence",
+                                    "schemes",
+                                ],
+                            },
+                            "summary": {"type": "string"},
+                        },
+                        "required": [
+                            "article_id",
+                            "upsc_relevance",
+                            "relevant_papers",
+                            "key_topics",
+                            "importance_level",
+                            "question_potential",
+                            "category",
+                            "summary",
+                        ],
+                    },
+                }
+            },
+            "required": ["articles"],
+        }
+
+        batch_response_format = {
+            "type": "json",
+            "name": "upsc_batch_analysis",
+            "description": "Batch UPSC relevance scoring of multiple articles",
+            "schema": upsc_batch_schema,
+        }
+
+        try:
+            response = await self._direct_completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=batch_response_format,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+
+            response_text = response.choices[0].message.content
+            if not response_text:
+                raise ValueError("Empty response from LLM")
+
+            clean_json = strip_markdown_json(response_text)
+            result_data = json.loads(clean_json)
+            logger.info(
+                f"✅ [Batch Analysis] Scored {len(result_data.get('articles', []))} articles from {response.model}"
+            )
+
+            return {
+                "provider_used": response.model,
+                "model_used": response.model,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "estimated_cost": 0.0,
+                "data": result_data,
+            }
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing failed for batch analysis: {e}")
+            logger.error(f"Response text: {response_text}")
+            raise
+        except Exception as e:
+            logger.error(f"Batch UPSC analysis failed: {e}")
+            raise
+
     # Additional handler stubs for other task types
     async def _handle_categorization(
         self, request: LLMRequest, model: str
@@ -815,68 +1038,6 @@ Title requirements:
             "estimated_cost": 0.0,
             "data": {},
         }
-
-    async def _handle_knowledge_card(
-        self, request: LLMRequest, model: str
-    ) -> Dict[str, Any]:
-        """Handle knowledge card generation for UPSC current affairs.
-
-        Generates a 5-layer knowledge card from article content, analysis data,
-        PYQ context, and syllabus context passed via custom_instructions.
-        """
-
-        prompt = f"""You are an expert UPSC knowledge card generator.
-
-Your job is to create a structured 5-layer knowledge card from the provided article
-and analysis context. This card will be used by UPSC aspirants for efficient revision.
-
-{request.content}
-
-{request.custom_instructions or ""}
-
-Generate a knowledge card with these 4 fields (the 5th layer — connections — is built separately):
-
-1. headline_layer: A single crisp headline (15-25 words) that captures the UPSC-relevant essence.
-2. facts_layer: An array of 3-5 bullet-point facts. Each fact must be specific, verifiable, and exam-worthy.
-3. context_layer: A 2-3 sentence paragraph placing this news in broader UPSC context (historical, constitutional, economic).
-4. mains_angle_layer: A single Mains-style question stem with GS paper reference, e.g. "Discuss the role of... (GS3: Economy)".
-
-Return ONLY the JSON object with these 4 keys.
-"""
-
-        knowledge_card_response_format = {
-            "type": "json",
-            "name": "knowledge_card",
-            "description": "UPSC 5-layer knowledge card generation",
-            "schema": self.response_schemas["knowledge_card"],
-        }
-
-        try:
-            response = await self._direct_completion(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format=knowledge_card_response_format,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-            )
-
-            clean_json = strip_markdown_json(response.choices[0].message.content)
-            result_data = json.loads(clean_json)
-            logger.info(
-                f"✅ [Knowledge Card] Structured response received from {response.model}"
-            )
-
-            return {
-                "provider_used": response.model,
-                "model_used": response.model,
-                "tokens_used": response.usage.total_tokens if response.usage else 0,
-                "estimated_cost": 0.0,
-                "data": result_data,
-            }
-
-        except Exception as e:
-            logger.error(f"Knowledge card generation failed: {e}")
-            raise
 
 
 # Global service instance

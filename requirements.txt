@@ -47,9 +47,8 @@ readability-lxml>=0.8.1
 # Additional HTTP client features
 requests-html>=0.10.0
 
-
-# Browser automation for paywall login sessions
-playwright>=1.49.0
+# Semantic deduplication (TF-IDF cosine similarity for cross-source dedup)
+scikit-learn>=1.6.0
 
 # Additional utilities
 python-multipart>=0.0.12

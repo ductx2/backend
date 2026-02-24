@@ -5,19 +5,22 @@ T19: Full integration tests verifying end-to-end pipeline behaviour.
 MUST_KNOW threshold bypass, cron endpoint, and graceful degradation.
 
 All external calls mocked — no network access. Each test fully independent.
+
+Updated for batch-score-tournament flow in run():
+  fetch_all_sources → _filter_by_date → content extraction →
+  run_pass1_batch → threshold filter → select_top_articles →
+  run_pass2 per article → build result dict
 """
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.llm_schemas import LLMResponse, TaskType
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+_RECENT_DATE_ISO = datetime.now(timezone.utc).isoformat()
 
 
 def _make_raw(
@@ -34,41 +37,40 @@ def _make_raw(
         "url": url,
         "source_site": source_site,
         "section": section,
-        "published_date": "2026-02-23",
+        "published_date": _RECENT_DATE_ISO,
         "content": content,
     }
     article.update(extra)
     return article
 
 
-def _make_enriched(
-    title: str = "Article",
-    url: str = "https://test.com/a",
-    source_site: str = "indianexpress",
-    section: str = "explained",
-    **extra: object,
+def _make_pass1_result(
+    upsc_relevance: int = 78,
+    gs_paper: str = "GS3",
 ) -> dict:
-    """Enriched article with all 5 layers populated."""
-    article = {
-        "title": title,
-        "url": url,
-        "source_site": source_site,
-        "section": section,
-        "published_date": "2026-02-23",
-        "content": "Full body content.",
-        "upsc_relevance": 78,
-        "gs_paper": "GS3",
+    return {
+        "upsc_relevance": upsc_relevance,
+        "gs_paper": gs_paper,
         "key_facts": ["fact1", "fact2"],
         "keywords": ["economy", "policy"],
         "syllabus_matches": [
             {
-                "paper": "GS3",
+                "paper": gs_paper,
                 "topic": "Economy",
                 "sub_topic": "Fiscal",
                 "confidence": 0.9,
             }
         ],
-        "priority_triage": "must_know",
+        "raw_pass1_data": {
+            "upsc_relevance": upsc_relevance,
+            "relevant_papers": [gs_paper],
+            "summary": "Test article summary.",
+        },
+    }
+
+
+def _make_pass2_result() -> dict:
+    return {
         "headline_layer": "Test headline for the article.",
         "facts_layer": ["Fact 1", "Fact 2"],
         "context_layer": "Context for the article.",
@@ -80,8 +82,6 @@ def _make_enriched(
         },
         "mains_angle_layer": "Mains angle for the article.",
     }
-    article.update(extra)
-    return article
 
 
 FIVE_LAYER_KEYS = (
@@ -94,7 +94,6 @@ FIVE_LAYER_KEYS = (
 
 
 def _pass1_llm_response(upsc_relevance: int = 78, success: bool = True) -> LLMResponse:
-    """Mock LLMResponse for Pass 1 (UPSC_ANALYSIS)."""
     return LLMResponse(
         success=success,
         task_type=TaskType.UPSC_ANALYSIS,
@@ -120,7 +119,6 @@ def _pass1_llm_response(upsc_relevance: int = 78, success: bool = True) -> LLMRe
 
 
 def _pass2_llm_response(success: bool = True) -> LLMResponse:
-    """Mock LLMResponse for Pass 2 (KNOWLEDGE_CARD)."""
     return LLMResponse(
         success=success,
         task_type=TaskType.SUMMARIZATION,
@@ -158,21 +156,57 @@ MOCK_PYQ_FORMATTED = {
 }
 
 
+def _build_pipeline_patches(
+    raw_articles, pass1_results=None, pass2_result=None, selected_articles=None
+):
+    """Build mock objects for KnowledgeCardPipeline + ArticleSelector."""
+    if pass1_results is None:
+        pass1_results = [_make_pass1_result() for _ in raw_articles]
+    if pass2_result is None:
+        pass2_result = _make_pass2_result()
+
+    mock_kcp = MagicMock()
+    mock_kcp.run_pass1_batch = AsyncMock(return_value=pass1_results)
+    mock_kcp.run_pass2 = AsyncMock(return_value=pass2_result)
+    mock_kcp.relevance_threshold = 55
+    mock_kcp._is_must_know = MagicMock(return_value=True)
+    mock_kcp._compute_triage = MagicMock(return_value="must_know")
+
+    mock_selector = MagicMock()
+    if selected_articles is not None:
+        mock_selector.select_top_articles = AsyncMock(return_value=selected_articles)
+    else:
+        mock_selector.select_top_articles = AsyncMock(
+            side_effect=lambda articles, target=30: articles
+        )
+
+    return mock_kcp, mock_selector
+
+
 # ============================================================================
 # Test 1: Curated pipeline produces 25–30 cards
 # ============================================================================
 
 
 async def test_curated_pipeline_produces_25_to_30_cards():
-    """Pipeline with 28 raw → 27 enriched produces correct counts, all 5 layers present."""
+    """Pipeline with 28 raw → 27 selected/enriched produces correct counts."""
     from app.services.unified_pipeline import UnifiedPipeline
 
     raw_articles = [
         _make_raw(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(28)
     ]
-    enriched_articles = [
-        _make_enriched(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(27)
-    ]
+
+    pass1 = [_make_pass1_result() for _ in range(28)]
+
+    selected = []
+    for i in range(27):
+        art = _make_raw(title=f"Art {i}", url=f"https://test.com/{i}")
+        art.update(_make_pass1_result())
+        selected.append(art)
+
+    mock_kcp, mock_selector = _build_pipeline_patches(
+        raw_articles, pass1_results=pass1, selected_articles=selected
+    )
 
     with (
         patch.object(
@@ -180,10 +214,13 @@ async def test_curated_pipeline_produces_25_to_30_cards():
             "fetch_all_sources",
             new=AsyncMock(return_value=raw_articles),
         ),
-        patch.object(
-            UnifiedPipeline,
-            "enrich_articles",
-            new=AsyncMock(return_value=enriched_articles),
+        patch(
+            "app.services.unified_pipeline.KnowledgeCardPipeline",
+            return_value=mock_kcp,
+        ),
+        patch(
+            "app.services.unified_pipeline.ArticleSelector",
+            return_value=mock_selector,
         ),
     ):
         result = await UnifiedPipeline().run()
@@ -207,43 +244,52 @@ async def test_dedup_across_pipeline_runs():
     """First run saves 10, second run with 5 overlapping URLs saves only 5 new."""
     from app.services.unified_pipeline import UnifiedPipeline
 
-    # Run 1: 10 unique articles
     run1_articles = [
         _make_raw(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(10)
     ]
-    run1_enriched = [
-        _make_enriched(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(10)
-    ]
+    run1_pass1 = [_make_pass1_result() for _ in range(10)]
 
-    # Run 2: 5 same URLs (0..4) + 5 new (10..14)
+    run1_selected = []
+    for i in range(10):
+        art = _make_raw(title=f"Art {i}", url=f"https://test.com/{i}")
+        art.update(_make_pass1_result())
+        run1_selected.append(art)
+
     run2_articles = [
         _make_raw(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(5)
     ] + [
         _make_raw(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(10, 15)
     ]
-    run2_enriched = [
-        _make_enriched(title=f"Art {i}", url=f"https://test.com/{i}") for i in range(5)
-    ] + [
-        _make_enriched(title=f"Art {i}", url=f"https://test.com/{i}")
-        for i in range(10, 15)
-    ]
+    run2_pass1 = [_make_pass1_result() for _ in range(10)]
+
+    run2_selected = []
+    for i in list(range(5)) + list(range(10, 15)):
+        art = _make_raw(title=f"Art {i}", url=f"https://test.com/{i}")
+        art.update(_make_pass1_result())
+        run2_selected.append(art)
 
     mock_db = MagicMock()
     mock_db.upsert_current_affair = AsyncMock(
         return_value={"success": True, "data": {}, "message": "ok"}
     )
 
-    # Run 1 — all 10 save successfully
+    mock_kcp1, mock_selector1 = _build_pipeline_patches(
+        run1_articles, pass1_results=run1_pass1, selected_articles=run1_selected
+    )
+
     with (
         patch.object(
             UnifiedPipeline,
             "fetch_all_sources",
             new=AsyncMock(return_value=run1_articles),
         ),
-        patch.object(
-            UnifiedPipeline,
-            "enrich_articles",
-            new=AsyncMock(return_value=run1_enriched),
+        patch(
+            "app.services.unified_pipeline.KnowledgeCardPipeline",
+            return_value=mock_kcp1,
+        ),
+        patch(
+            "app.services.unified_pipeline.ArticleSelector",
+            return_value=mock_selector1,
         ),
         patch("app.services.unified_pipeline.SupabaseConnection", return_value=mock_db),
     ):
@@ -251,11 +297,13 @@ async def test_dedup_across_pipeline_runs():
 
     assert result1["db_save"]["saved"] == 10
 
-    # Reset mock call count for run 2
     mock_db.upsert_current_affair.reset_mock()
 
-    # Run 2 — mock save_articles to simulate DB ON CONFLICT DO NOTHING for 5 dupes
     mock_save = AsyncMock(return_value={"saved": 5, "skipped": 5, "errors": 0})
+
+    mock_kcp2, mock_selector2 = _build_pipeline_patches(
+        run2_articles, pass1_results=run2_pass1, selected_articles=run2_selected
+    )
 
     with (
         patch.object(
@@ -263,10 +311,13 @@ async def test_dedup_across_pipeline_runs():
             "fetch_all_sources",
             new=AsyncMock(return_value=run2_articles),
         ),
-        patch.object(
-            UnifiedPipeline,
-            "enrich_articles",
-            new=AsyncMock(return_value=run2_enriched),
+        patch(
+            "app.services.unified_pipeline.KnowledgeCardPipeline",
+            return_value=mock_kcp2,
+        ),
+        patch(
+            "app.services.unified_pipeline.ArticleSelector",
+            return_value=mock_selector2,
         ),
         patch.object(UnifiedPipeline, "save_articles", new=mock_save),
         patch("app.services.unified_pipeline.SupabaseConnection", return_value=mock_db),
@@ -300,36 +351,9 @@ async def test_source_type_propagation_through_pipeline():
         for i, st in enumerate(source_types)
     ]
 
-    # enrich_articles pass-through: return articles as-is plus required enrichment fields
-    async def fake_enrich(self_or_articles, articles=None):
-        # Handle both (self, articles) and (articles,) call patterns
-        if articles is None:
-            articles = self_or_articles
-        enriched = []
-        for a in articles:
-            e = {**a}
-            e.update(
-                {
-                    "upsc_relevance": 75,
-                    "gs_paper": "GS3",
-                    "key_facts": [],
-                    "keywords": [],
-                    "syllabus_matches": [],
-                    "priority_triage": "should_know",
-                    "headline_layer": "HL",
-                    "facts_layer": ["F1"],
-                    "context_layer": "CTX",
-                    "connections_layer": {
-                        "syllabus_topics": [],
-                        "related_pyqs": [],
-                        "pyq_count": 0,
-                        "year_range": "",
-                    },
-                    "mains_angle_layer": "MA",
-                }
-            )
-            enriched.append(e)
-        return enriched
+    pass1 = [_make_pass1_result() for _ in range(4)]
+
+    mock_kcp, mock_selector = _build_pipeline_patches(raw_articles, pass1_results=pass1)
 
     with (
         patch.object(
@@ -337,8 +361,13 @@ async def test_source_type_propagation_through_pipeline():
             "fetch_all_sources",
             new=AsyncMock(return_value=raw_articles),
         ),
-        patch.object(
-            UnifiedPipeline, "enrich_articles", new=AsyncMock(side_effect=fake_enrich)
+        patch(
+            "app.services.unified_pipeline.KnowledgeCardPipeline",
+            return_value=mock_kcp,
+        ),
+        patch(
+            "app.services.unified_pipeline.ArticleSelector",
+            return_value=mock_selector,
         ),
     ):
         result = await UnifiedPipeline().run()
@@ -363,7 +392,6 @@ async def test_single_threshold_with_must_know_bypass():
     """
     from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
 
-    # Case A: non-MUST_KNOW, low relevance → filtered
     with (
         patch("app.services.knowledge_card_pipeline.llm_service") as mock_llm,
         patch("app.services.knowledge_card_pipeline.SyllabusService"),
@@ -388,7 +416,6 @@ async def test_single_threshold_with_must_know_bypass():
             "Case A: non-MUST_KNOW with relevance=35 must be filtered"
         )
 
-    # Case B: MUST_KNOW (indianexpress/explained), low relevance → bypass
     with (
         patch("app.services.knowledge_card_pipeline.llm_service") as mock_llm,
         patch("app.services.knowledge_card_pipeline.SyllabusService") as mock_syl,
@@ -425,7 +452,6 @@ async def test_single_threshold_with_must_know_bypass():
         for key in FIVE_LAYER_KEYS:
             assert key in result_b
 
-    # Case C: non-MUST_KNOW, relevance=45 (above threshold=40) → passes
     with (
         patch("app.services.knowledge_card_pipeline.llm_service") as mock_llm,
         patch("app.services.knowledge_card_pipeline.SyllabusService") as mock_syl,
@@ -471,7 +497,6 @@ async def test_cron_endpoint_runs_full_pipeline():
     from app.main import app
     from app.api import simplified_flow
 
-    # Reset the module-level lock before test
     simplified_flow._pipeline_lock = asyncio.Lock()
 
     transport = ASGITransport(app=app)
@@ -516,22 +541,22 @@ async def test_pipeline_graceful_degradation():
     from other sources. Uses asyncio.gather(return_exceptions=True) internally."""
     from app.services.unified_pipeline import UnifiedPipeline
 
-    # We mock fetch_all_sources to simulate partial failure:
-    # 8 sources return articles, 1 raises. fetch_all_sources handles this internally
-    # via asyncio.gather(return_exceptions=True) and returns articles from surviving sources.
-
-    # The simplest reliable approach: mock fetch_all_sources to return partial results
-    # (simulating that it internally handled the exception from one source and continued).
-    # Then verify run() completes without crash.
-
     partial_articles = [
         _make_raw(title=f"Surviving {i}", url=f"https://test.com/surv-{i}")
         for i in range(8)
     ]
-    enriched = [
-        _make_enriched(title=f"Surviving {i}", url=f"https://test.com/surv-{i}")
-        for i in range(6)
-    ]
+
+    pass1 = [_make_pass1_result() for _ in range(8)]
+
+    selected = []
+    for i in range(6):
+        art = _make_raw(title=f"Surviving {i}", url=f"https://test.com/surv-{i}")
+        art.update(_make_pass1_result())
+        selected.append(art)
+
+    mock_kcp, mock_selector = _build_pipeline_patches(
+        partial_articles, pass1_results=pass1, selected_articles=selected
+    )
 
     with (
         patch.object(
@@ -539,22 +564,23 @@ async def test_pipeline_graceful_degradation():
             "fetch_all_sources",
             new=AsyncMock(return_value=partial_articles),
         ),
-        patch.object(
-            UnifiedPipeline,
-            "enrich_articles",
-            new=AsyncMock(return_value=enriched),
+        patch(
+            "app.services.unified_pipeline.KnowledgeCardPipeline",
+            return_value=mock_kcp,
+        ),
+        patch(
+            "app.services.unified_pipeline.ArticleSelector",
+            return_value=mock_selector,
         ),
     ):
         result = await UnifiedPipeline().run()
 
-    # Pipeline completed — did NOT crash
     assert result["total_fetched"] >= 0
     assert result["total_fetched"] == 8
     assert result["total_enriched"] == 6
     assert "articles" in result
     assert len(result["articles"]) == 6
 
-    # ALSO verify: if fetch_all_sources itself raises, run() propagates (fails loudly)
     with patch.object(
         UnifiedPipeline,
         "fetch_all_sources",
