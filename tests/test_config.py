@@ -26,10 +26,10 @@ def make_settings(**overrides):
         return Settings(_env_file=None)  # type: ignore[call-arg]
 
 
-def test_relevance_threshold_default_is_40():
-    """relevance_threshold must default to 40 (pipeline filter)."""
+def test_relevance_threshold_default_is_55():
+    """relevance_threshold must default to 55 (raised from 40 for quality — pipeline-smart-selection plan)."""
     s = make_settings()
-    assert s.relevance_threshold == 40
+    assert s.relevance_threshold == 55
 
 
 def test_playwright_cookie_dir_default():

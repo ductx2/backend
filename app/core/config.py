@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     )
 
     relevance_threshold: int = Field(
-        default=40, description="Minimum UPSC relevance score to pass articles through the pipeline"
+        default=55, description="Minimum UPSC relevance score to pass articles through the pipeline (raised from 40 to 55 for quality)"
     )
 
     # Scraping Configuration

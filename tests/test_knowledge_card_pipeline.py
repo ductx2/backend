@@ -222,12 +222,12 @@ class TestModuleImports:
     @patch("app.services.knowledge_card_pipeline.SyllabusService")
     @patch("app.services.knowledge_card_pipeline.PYQService")
     def test_relevance_threshold_from_settings(self, mock_pyq_cls, mock_syllabus_cls):
-        """FAILING UNTIL IMPL: pipeline.relevance_threshold should read from settings (40)."""
+        """Pipeline.relevance_threshold should read from settings (55)."""
         from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
         pipeline = KnowledgeCardPipeline()
         # Must be an instance attribute, not a class constant
         assert hasattr(pipeline, "relevance_threshold")
-        assert pipeline.relevance_threshold == 40
+        assert pipeline.relevance_threshold == 55
     @patch("app.services.knowledge_card_pipeline.SyllabusService")
     @patch("app.services.knowledge_card_pipeline.PYQService")
     def test_no_hardcoded_class_constant(self, mock_pyq_cls, mock_syllabus_cls):
@@ -1085,28 +1085,26 @@ class TestMustKnowBypass:
 
 
 # ============================================================================
-# TESTS: Threshold boundary with new value (40, from config)
+# TESTS: Threshold boundary with new value (55, from config)
 # ============================================================================
 
 
 class TestThresholdConfigurable:
-    """Verify that the threshold comes from settings and is 40, not 55."""
+    """Verify that the threshold comes from settings and is 55, not 40."""
 
     @pytest.mark.asyncio
     @patch("app.services.knowledge_card_pipeline.llm_service")
     @patch("app.services.knowledge_card_pipeline.SyllabusService")
     @patch("app.services.knowledge_card_pipeline.PYQService")
-    async def test_process_article_filters_below_40(
+    async def test_process_article_filters_below_55(
         self, mock_pyq_cls, mock_syllabus_cls, mock_llm
     ):
-        """FAILING UNTIL IMPL: score 39 is below new threshold (40) and must be filtered."""
+        """Score 54 is below new threshold (55) and must be filtered."""
         from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
-
         mock_llm.process_request = AsyncMock(
-            return_value=_make_pass1_llm_response(upsc_relevance=39)
+            return_value=_make_pass1_llm_response(upsc_relevance=54)
         )
         mock_syllabus_cls.return_value.match_topics.return_value = []
-
         pipeline = KnowledgeCardPipeline()
         result = await pipeline.process_article(SAMPLE_ARTICLE_LOW_RELEVANCE)
         assert result is None
@@ -1115,15 +1113,14 @@ class TestThresholdConfigurable:
     @patch("app.services.knowledge_card_pipeline.llm_service")
     @patch("app.services.knowledge_card_pipeline.SyllabusService")
     @patch("app.services.knowledge_card_pipeline.PYQService")
-    async def test_process_article_passes_at_exactly_40(
+    async def test_process_article_passes_at_exactly_55(
         self, mock_pyq_cls, mock_syllabus_cls, mock_llm
     ):
-        """FAILING UNTIL IMPL: score exactly 40 should PASS the new threshold."""
+        """Score exactly 55 should PASS the threshold."""
         from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
-
         mock_llm.process_request = AsyncMock(
             side_effect=[
-                _make_pass1_llm_response(upsc_relevance=40),
+                _make_pass1_llm_response(upsc_relevance=55),
                 _make_pass2_llm_response(),
             ]
         )
@@ -1136,25 +1133,23 @@ class TestThresholdConfigurable:
             "year_range": "",
             "exam_types": [],
         }
-
         pipeline = KnowledgeCardPipeline()
         result = await pipeline.process_article(SAMPLE_ARTICLE)
         assert result is not None
-        assert result["upsc_relevance"] == 40
+        assert result["upsc_relevance"] == 55
 
     @pytest.mark.asyncio
     @patch("app.services.knowledge_card_pipeline.llm_service")
     @patch("app.services.knowledge_card_pipeline.SyllabusService")
     @patch("app.services.knowledge_card_pipeline.PYQService")
-    async def test_process_article_score_50_passes_new_threshold(
+    async def test_process_article_score_70_passes_threshold(
         self, mock_pyq_cls, mock_syllabus_cls, mock_llm
     ):
-        """FAILING UNTIL IMPL: score 50 is ABOVE 40 so must pass (was incorrectly filtered at 55)."""
+        """Score 70 is well above 55 so must pass."""
         from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
-
         mock_llm.process_request = AsyncMock(
             side_effect=[
-                _make_pass1_llm_response(upsc_relevance=50),
+                _make_pass1_llm_response(upsc_relevance=70),
                 _make_pass2_llm_response(),
             ]
         )
@@ -1167,11 +1162,10 @@ class TestThresholdConfigurable:
             "year_range": "",
             "exam_types": [],
         }
-
         pipeline = KnowledgeCardPipeline()
         result = await pipeline.process_article(SAMPLE_ARTICLE)
         assert result is not None
-        assert result["upsc_relevance"] == 50
+        assert result["upsc_relevance"] == 70
 
 
 # ============================================================================
