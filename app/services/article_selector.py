@@ -264,19 +264,60 @@ class ArticleSelector:
 
         except Exception as e:
             logger.warning(
-                "[ArticleSelector] Tournament LLM failed (%s), falling back to top-%d-by-score",
+                "[ArticleSelector] Tournament LLM failed (%s), falling back to GS-balanced top-%d",
                 e,
                 target,
             )
-            # SC4 fallback: deterministic top-N-by-score
-            fallback = sorted(
-                articles,
-                key=lambda a: a.get("upsc_relevance", 0),
-                reverse=True,
-            )[:target]
+            # GS-balanced fallback: reserve minimums per paper, then fill by score
+            by_gs: dict[str, list[dict[str, Any]]] = {}
+            for article in articles:
+                gs = _gs_paper(article)
+                by_gs.setdefault(gs, []).append(article)
+
+            for gs in by_gs:
+                by_gs[gs].sort(
+                    key=lambda a: a.get("upsc_relevance", 0), reverse=True
+                )
+
+            reserved: list[dict[str, Any]] = []
+            reserved_ids: set[str] = set()
+
+            for gs_paper, min_count in self.GS_MIN.items():
+                candidates = by_gs.get(gs_paper, [])
+                for article in candidates[:min_count]:
+                    aid = _article_id(article)
+                    if aid not in reserved_ids:
+                        reserved.append(article)
+                        reserved_ids.add(aid)
+
+            # Fill remaining slots with highest-scored articles not already reserved
+            remaining_slots = target - len(reserved)
+            if remaining_slots > 0:
+                all_sorted = sorted(
+                    articles,
+                    key=lambda a: a.get("upsc_relevance", 0),
+                    reverse=True,
+                )
+                for article in all_sorted:
+                    if remaining_slots <= 0:
+                        break
+                    aid = _article_id(article)
+                    if aid not in reserved_ids:
+                        reserved.append(article)
+                        reserved_ids.add(aid)
+                        remaining_slots -= 1
+
+            fallback = reserved[:target]
+
+            # Log GS distribution for observability
+            gs_dist: dict[str, int] = {}
+            for article in fallback:
+                gs = _gs_paper(article)
+                gs_dist[gs] = gs_dist.get(gs, 0) + 1
             logger.info(
-                "[ArticleSelector] Fallback selected %d articles by score",
+                "[ArticleSelector] Fallback GS-balanced: %d articles, distribution: %s",
                 len(fallback),
+                ", ".join(f"{k}={v}" for k, v in sorted(gs_dist.items())),
             )
             return fallback
 
