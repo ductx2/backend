@@ -184,14 +184,14 @@ class TestFieldValues:
 class TestSessionManagerInteraction:
     """Verify correct calls to PlaywrightSessionManager."""
 
-    async def test_calls_get_page_with_indianexpress(self, mock_session_manager):
-        """Mock verifies session_manager.get_page('indianexpress') is called."""
+    async def test_calls_get_page_with_ie(self, mock_session_manager):
+        """Mock verifies session_manager.get_page('ie') is called."""
         from app.services.ie_playwright_scraper import IEPlaywrightScraper
 
         scraper = IEPlaywrightScraper(mock_session_manager)
         await scraper.scrape_editorials()
 
-        mock_session_manager.get_page.assert_called_with("indianexpress")
+        mock_session_manager.get_page.assert_called_with("ie")
 
 
 # ============================================================================

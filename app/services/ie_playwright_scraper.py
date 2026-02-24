@@ -58,7 +58,7 @@ class IEPlaywrightScraper:
         articles: List[dict] = []
 
         try:
-            page = await self.session_manager.get_page("indianexpress")
+            page = await self.session_manager.get_page("ie")
 
             await page.goto(section_url, wait_until="domcontentloaded")
             await page.wait_for_selector(
