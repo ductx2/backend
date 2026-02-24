@@ -81,12 +81,6 @@ class TestRSSSourceConfiguration:
                 f"Non-Hindu source found: {source.name} ({source.url})"
             )
 
-    def test_no_garbage_national_feed_as_primary(self, sources):
-        national = [s for s in sources if "National" in s.name]
-        assert len(national) == 1
-        assert national[0].priority == 3, (
-            f"National feed should have priority 3, got {national[0].priority}"
-        )
 
     def test_editorial_has_highest_priority(self, sources):
         editorial = [s for s in sources if "Editorial" in s.name]
@@ -118,8 +112,8 @@ class TestRSSSourceConfiguration:
         assert len(et) == 0, f"Economic Times should be removed: {[s.name for s in et]}"
 
     def test_source_count(self, sources):
-        assert len(sources) == 8, (
-            f"Expected 8, got {len(sources)}: {[s.name for s in sources]}"
+        assert len(sources) == 4, (
+            f"Expected 4, got {len(sources)}: {[s.name for s in sources]}"
         )
 
     def test_all_sources_enabled(self, sources):
@@ -136,32 +130,20 @@ class TestRSSSourceConfiguration:
         names = {s.name for s in sources}
         expected = {
             "The Hindu - Editorial",
-            "The Hindu - Op-Ed",
             "The Hindu - Lead",
             "The Hindu - Economy",
-            "The Hindu - Science",
-            "The Hindu - Technology",
             "The Hindu - International",
-            "The Hindu - National",
         }
         assert names == expected, (
             f"Missing: {expected - names}, Extra: {names - expected}"
         )
 
     def test_opinion_feeds_are_priority_1(self, sources):
-        opinion_names = {
-            "The Hindu - Editorial",
-            "The Hindu - Op-Ed",
-            "The Hindu - Lead",
-        }
+        opinion_names = {"The Hindu - Editorial", "The Hindu - Lead"}
         for source in sources:
             if source.name in opinion_names:
                 assert source.priority == 1, f"{source.name} should be priority 1"
 
-    def test_technology_is_priority_2(self, sources):
-        tech = [s for s in sources if "Technology" in s.name]
-        assert len(tech) == 1
-        assert tech[0].priority == 2
 
     def test_source_health_defaults(self, sources):
         for source in sources:

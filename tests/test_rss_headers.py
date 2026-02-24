@@ -10,7 +10,7 @@ def test_get_optimized_headers_returns_user_agent_for_all_sources():
     """Test that _get_optimized_headers returns User-Agent for all sources"""
     processor = OptimizedRSSProcessor()
 
-    # Test all 6 sources
+    # Test all 4 sources
     for source in processor.sources:
         headers = processor._get_optimized_headers(source)
 
@@ -28,18 +28,17 @@ def test_get_optimized_headers_returns_user_agent_for_all_sources():
         print(f"OK: {source.name}: User-Agent applied correctly")
 
 
-def test_sources_list_contains_all_eight_hindu_feeds():
-    """Test that all 8 curated Hindu feeds are in sources list"""
+def test_sources_list_contains_four_high_signal_hindu_feeds():
+    """Test that exactly 4 high-signal Hindu feeds are in sources list"""
     processor = OptimizedRSSProcessor()
-    # Assert total source count is 8
-    assert len(processor.sources) == 8, (
-        f"Expected 8 sources, got {len(processor.sources)}"
+    # Assert total source count is 4
+    assert len(processor.sources) == 4, (
+        f"Expected 4 sources, got {len(processor.sources)}"
     )
-
     # Assert all sources are The Hindu feeds
     for source in processor.sources:
         assert "thehindu.com" in source.url, (
             f"Non-Hindu source found: {source.name} ({source.url})"
         )
 
-    print("OK: All 8 curated Hindu feeds present in sources list")
+    print("OK: All 4 high-signal Hindu feeds present in sources list")

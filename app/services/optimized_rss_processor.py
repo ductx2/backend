@@ -99,18 +99,12 @@ class OptimizedRSSProcessor:
         self.settings = get_settings()
         self.db = get_database_sync()
 
-        # Configure premium RSS sources — Hindu curated feeds only
-        # ET, IE, LiveMint removed; 6 specialised Hindu section feeds added
+        # 4 high-signal Hindu RSS feeds (Op-Ed, Science, Technology, National removed
+        # — low UPSC relevance. Will expand when Hindu subscription is available.)
         self.sources = [
             PremiumRSSSource(
                 name="The Hindu - Editorial",
                 url="https://www.thehindu.com/opinion/editorial/feeder/default.rss",
-                priority=1,
-                enabled=True,
-            ),
-            PremiumRSSSource(
-                name="The Hindu - Op-Ed",
-                url="https://www.thehindu.com/opinion/op-ed/feeder/default.rss",
                 priority=1,
                 enabled=True,
             ),
@@ -127,27 +121,9 @@ class OptimizedRSSProcessor:
                 enabled=True,
             ),
             PremiumRSSSource(
-                name="The Hindu - Science",
-                url="https://www.thehindu.com/sci-tech/science/feeder/default.rss",
-                priority=2,
-                enabled=True,
-            ),
-            PremiumRSSSource(
-                name="The Hindu - Technology",
-                url="https://www.thehindu.com/sci-tech/technology/feeder/default.rss",
-                priority=2,
-                enabled=True,
-            ),
-            PremiumRSSSource(
-                name="The Hindu - National",
-                url="https://www.thehindu.com/news/national/feeder/default.rss",
-                priority=3,
-                enabled=True,
-            ),
-            PremiumRSSSource(
                 name="The Hindu - International",
                 url="https://www.thehindu.com/news/international/feeder/default.rss",
-                priority=3,
+                priority=2,
                 enabled=True,
             ),
         ]
