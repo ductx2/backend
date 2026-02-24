@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 import hashlib
 from urllib.parse import urlparse
 import time
+import re
 
 # Async HTTP and RSS processing
 import httpx
@@ -309,6 +310,12 @@ class OptimizedRSSProcessor:
         """Validate article meets minimum quality requirements"""
 
         if not article.get("title") or len(article["title"]) < 10:
+            return False
+        # Filter Hindi/Devanagari titles
+        if re.search(r'[\u0900-\u097F]', article.get('title', '')):
+            return False
+        # Filter Premium articles
+        if 'premium' in article.get('title', '').lower():
             return False
 
         if not article.get("content") or len(article["content"]) < 30:

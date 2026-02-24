@@ -1,0 +1,2 @@
+PASS: No WARNING-level .env.llm message
+Captured log output: (empty)

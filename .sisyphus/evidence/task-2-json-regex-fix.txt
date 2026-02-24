@@ -1,0 +1,2 @@
+PASS: Greedy regex captures both articles with nested arrays
+Old regex fails: Expecting ',' delimiter: line 1 column 39 (char 38)

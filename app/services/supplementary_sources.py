@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,12 +23,13 @@ _HEADERS = {
 
 class SupplementarySources:
     SOURCES: list[dict[str, str]] = [
-        {
-            "source_site": "prs",
-            "name": "PRS Legislative Research",
-            "url": "https://www.prsindia.org/parliamenttrack/rss",
-            "section": "legislature",
-        },
+        # Disabled: PRS RSS returns 404 as of Feb 2026
+        # {
+        #     "source_site": "prs",
+        #     "name": "PRS Legislative Research",
+        #     "url": "https://www.prsindia.org/parliamenttrack/rss",
+        #     "section": "legislature",
+        # },
         # Economy — RBI
         {
             "source_site": "rbi",
@@ -93,9 +95,19 @@ class SupplementarySources:
         title = getattr(entry, "title", "").strip()
         if not title:
             return None
+        # Filter Hindi/Devanagari titles
+        if re.search(r"[\u0900-\u097F]", title):
+            logger.debug("[SupplementarySources] Filtered Hindi title: %s", title[:50])
+            return None
+        # Filter Premium articles
+        if "premium" in title.lower():
+            logger.debug(
+                "[SupplementarySources] Filtered premium title: %s", title[:50]
+            )
+            return None
         # Filter out Dealstreet entries (business law, not UPSC-relevant)
-        tags = getattr(entry, 'tags', []) or []
-        if any('dealstreet' in (tag.get('term', '') or '').lower() for tag in tags):
+        tags = getattr(entry, "tags", []) or []
+        if any("dealstreet" in (tag.get("term", "") or "").lower() for tag in tags):
             return None
 
         url = getattr(entry, "link", "").strip()
