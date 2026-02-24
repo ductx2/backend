@@ -204,7 +204,7 @@ class CentralizedLLMService:
                 load_dotenv(env_file)
                 logger.info(f"✅ Loaded environment variables from {env_file}")
             else:
-                logger.warning(f"❌ .env.llm file not found at {env_file}")
+                logger.debug(f"❌ .env.llm file not found at {env_file}")
 
             # Also load from main .env file
             main_env_file = Path(__file__).parent.parent.parent / ".env"
@@ -864,7 +864,7 @@ For each article, return:
             logger.error(f"Response text: {response_text}")
             # Recovery: extract "articles" array directly when LLM echoes schema preamble
             import re as _re
-            _match = _re.search(r'"articles"\s*:\s*(\[.*?\])\s*[,}]', response_text, _re.DOTALL)
+            _match = _re.search(r'"articles"\s*:\s*(\[.*\])\s*[,}]', response_text, _re.DOTALL)
             if _match:
                 try:
                     _articles_list = json.loads(_match.group(1))
