@@ -194,8 +194,6 @@ class CentralizedLLMService:
         """Initialize LiteLLM router with multi-provider configuration"""
         try:
             # Set up litellm logging
-            import os
-
             os.environ["LITELLM_LOG"] = "DEBUG"
 
             # Load environment variables from .env.llm file
@@ -671,66 +669,63 @@ LAYER 4 – MAINS ANGLE (mains_angle_layer):
   Suggest the GS paper and a likely question direction.
 """
 
-        knowledge_card_schema = {{
+        knowledge_card_schema = {
             "type": "object",
-            "properties": {{
-                "headline_layer": {{"type": "string"}},
-                "facts_layer": {{
+            "properties": {
+                "headline_layer": {"type": "string"},
+                "facts_layer": {
                     "type": "array",
-                    "items": {{"type": "string"}},
+                    "items": {"type": "string"},
                     "minItems": 5,
-                }},
-                "context_layer": {{"type": "string"}},
-                "mains_angle_layer": {{"type": "string"}},
-            }},
+                },
+                "context_layer": {"type": "string"},
+                "mains_angle_layer": {"type": "string"},
+            },
             "required": [
                 "headline_layer",
                 "facts_layer",
                 "context_layer",
                 "mains_angle_layer",
             ],
-        }}
+        }
 
-        knowledge_card_response_format = {{
+        knowledge_card_response_format = {
             "type": "json",
             "name": "knowledge_card",
             "description": "4-layer UPSC knowledge card for current affairs article",
             "schema": knowledge_card_schema,
-        }}
+        }
 
         try:
             response = await self._direct_completion(
                 model=model,
-                messages=[{{"role": "user", "content": prompt}}],
+                messages=[{"role": "user", "content": prompt}],
                 response_format=knowledge_card_response_format,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
             )
-
             response_text = response.choices[0].message.content
             if not response_text:
                 raise ValueError("Empty response from LLM")
-
             clean_json = strip_markdown_json(response_text)
             result_data = json.loads(clean_json)
             logger.info(
-                f"✅ [Knowledge Card] Structured response received from {{response.model}}"
+                f"✅ [Knowledge Card] Structured response received from {response.model}"
             )
 
-            return {{
+            return {
                 "provider_used": response.model,
                 "model_used": response.model,
                 "tokens_used": response.usage.total_tokens if response.usage else 0,
                 "estimated_cost": 0.0,
                 "data": result_data,
-            }}
-
+            }
         except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed for knowledge card: {{e}}")
-            logger.error(f"Response text: {{response_text}}")
+            logger.error(f"JSON parsing failed for knowledge card: {e}")
+            logger.error(f"Response text: {response_text}")
             raise
         except Exception as e:
-            logger.error(f"Knowledge card generation failed: {{e}}")
+            logger.error(f"Knowledge card generation failed: {e}")
             raise
 
     async def _handle_upsc_batch_analysis(
@@ -867,6 +862,22 @@ For each article, return:
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing failed for batch analysis: {e}")
             logger.error(f"Response text: {response_text}")
+            # Recovery: extract "articles" array directly when LLM echoes schema preamble
+            import re as _re
+            _match = _re.search(r'"articles"\s*:\s*(\[.*?\])\s*[,}]', response_text, _re.DOTALL)
+            if _match:
+                try:
+                    _articles_list = json.loads(_match.group(1))
+                    logger.info(f"[Batch Analysis] Recovered {len(_articles_list)} articles from malformed JSON")
+                    return {
+                        "provider_used": response.model,
+                        "model_used": response.model,
+                        "tokens_used": response.usage.total_tokens if response.usage else 0,
+                        "estimated_cost": 0.0,
+                        "data": {"articles": _articles_list},
+                    }
+                except Exception:
+                    pass
             raise
         except Exception as e:
             logger.error(f"Batch UPSC analysis failed: {e}")

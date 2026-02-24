@@ -77,7 +77,7 @@ class TestSourceConfiguration:
         self.ss = SupplementarySources()
 
     def test_nine_sources_defined(self):
-        assert len(self.ss.SOURCES) == 9
+        assert len(self.ss.SOURCES) == 10
     def test_prs_source_configured(self):
         names = [s["source_site"] for s in self.ss.SOURCES]
         assert "prs" in names
@@ -366,7 +366,7 @@ class TestFetchAll:
         mock_response.raise_for_status.return_value = None
         mock_requests.get.return_value = mock_response
 
-        # Each call returns 2 articles → 9 sources × 2 = 18 total
+        # Each call returns 2 articles → 10 sources × 2 = 20 total
         mock_feedparser.parse.return_value = _make_feed(
             [
                 _make_entry("Article 1", "https://example.com/1"),
@@ -374,7 +374,7 @@ class TestFetchAll:
             ]
         )
         result = self.ss.fetch_all()
-        assert len(result) == 18
+        assert len(result) == 20
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")
@@ -403,8 +403,8 @@ class TestFetchAll:
         )
 
         result = self.ss.fetch_all()
-        # One source failed, remaining 8 sources succeeded with 1 article each → 8 total
-        assert len(result) == 8
+        # One source failed, remaining 9 sources succeeded with 1 article each → 9 total
+        assert len(result) == 9
 
     @patch("app.services.supplementary_sources.feedparser")
     @patch("app.services.supplementary_sources.requests")

@@ -49,7 +49,7 @@ class ArticleSelector:
     async def deduplicate_semantic(
         self,
         articles: list[dict[str, Any]],
-        threshold: float = 0.50,
+        threshold: float = 0.40,
     ) -> list[dict[str, Any]]:
         """Remove near-duplicate articles (same event, different sources).
 
@@ -60,7 +60,14 @@ class ArticleSelector:
             return articles
 
         # Build corpus from titles (fast, effective for event dedup)
-        corpus = [a.get("title", "") for a in articles]
+        corpus = [
+            a.get("title", "") + " " + " ".join(
+                a.get("raw_pass1_data", {}).get("key_topics", [])
+                or a.get("key_facts", [])
+                or []
+            )
+            for a in articles
+        ]
 
         try:
             vectorizer = TfidfVectorizer(min_df=1)

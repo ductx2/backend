@@ -460,7 +460,7 @@ class TestIntegrationContentExtraction:
         extracted_mock.content = "Extracted body text."
 
         mock_extractor = MagicMock()
-        mock_extractor.extract_content = MagicMock(return_value=extracted_mock)
+        mock_extractor.extract_content = AsyncMock(return_value=extracted_mock)
 
         # We need pass1 to return 1 result (since extractor will provide content)
         pass1 = [_make_pass1_result()]

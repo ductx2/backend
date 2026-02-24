@@ -1,7 +1,7 @@
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.optimized_rss_processor import OptimizedRSSProcessor
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Pipeline configuration
 # NOTE: RELEVANCE_THRESHOLD = 55 lives in KnowledgeCardPipeline (knowledge_card_pipeline.py)
 _MAX_ARTICLES_DEFAULT = 30
-_LOG_LEVEL = "INFO"
+
 
 _HINDU_SOURCE_TO_SECTION: dict[str, str] = {
     "editorial": "editorial",
@@ -83,7 +83,6 @@ def _deduplicate(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _filter_by_date(articles: list[dict[str, Any]], max_age_hours: int = 36) -> list[dict[str, Any]]:
     """Remove articles older than max_age_hours. Articles with no date are kept (with warning)."""
-    from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
     filtered = []
     for article in articles:
@@ -309,6 +308,17 @@ class UnifiedPipeline:
         date_filtered = _filter_by_date(raw_articles)
         logger.info("Date filter: %d → %d articles", len(raw_articles), len(date_filtered))
 
+        # Step 2b: Filter UPSC prep/coaching articles (not real current affairs)
+        import re as _re
+        _prep_pattern = _re.compile(
+            r'(?i)UPSC\s+(Key|Essentials|Weekly|Prelims\s*Ready|Quiz|Simplified)'
+        )
+        date_filtered = [
+            a for a in date_filtered
+            if not _prep_pattern.search(a.get('title', ''))
+        ]
+        logger.info("Prep-article filter: kept %d articles", len(date_filtered))
+
         # Step 3: Content extraction (on ALL date-filtered articles, no blind cap)
         extractor = UniversalContentExtractor()
         articles_with_content: list[dict[str, Any]] = []
@@ -321,7 +331,10 @@ class UnifiedPipeline:
                 logger.warning("Skipping article without URL or content: '%s'", article.get('title', 'unknown'))
                 continue
             try:
-                extracted = extractor.extract_content(url)
+                extracted = await extractor.extract_content(url)
+                if extracted is None or not extracted.content:
+                    logger.warning("Content extraction returned empty for '%s'", article.get('title', 'unknown'))
+                    continue
                 article['content'] = extracted.content
                 articles_with_content.append(article)
             except Exception as e:

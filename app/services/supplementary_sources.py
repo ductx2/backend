@@ -80,6 +80,13 @@ class SupplementarySources:
             "url": "https://www.gatewayhouse.in/feed",
             "section": "international_relations",
         },
+        # GS-II Policy — Government press releases (PIB)
+        {
+            "source_site": "pib",
+            "name": "PIB English National",
+            "url": "https://pib.gov.in/RssMain.aspx?ModID=6&Lang=1&Regid=3",
+            "section": "policy",
+        },
     ]
 
     def _parse_entry(self, entry: Any, source: dict[str, str]) -> dict[str, Any] | None:
