@@ -7,6 +7,7 @@ Pass 2: PYQService + KNOWLEDGE_CARD LLM for full 5-layer knowledge card generati
 No database writes here — that's T14.
 """
 
+import asyncio
 import logging
 import hashlib
 import json
@@ -169,30 +170,42 @@ class KnowledgeCardPipeline:
                 if not resp_b.success:
                     raise RuntimeError(f"Pass B failed: {resp_b.error_message}")
             except Exception as exc:
-                # Retry once
-                logger.warning("[Pass1Batch] Batch %d/%d failed (%s), retrying...", batch_idx + 1, len(batches), exc)
-                try:
-                    resp_a = await call_batch(pass_a_payload)
-                    if not resp_a.success:
-                        raise RuntimeError(f"Pass A retry failed: {resp_a.error_message}")
-                    resp_b = await call_batch(pass_b_payload)
-                    if not resp_b.success:
-                        raise RuntimeError(f"Pass B retry failed: {resp_b.error_message}")
-                except Exception as retry_exc:
-                    # Fallback: MUST_KNOW → individual run_pass1(), others skipped
-                    must_know_count = sum(1 for _, a in batch_with_ids if self._is_must_know(a))
+                RETRY_DELAYS = [1.0, 2.0, 4.0]
+                succeeded = False
+                for retry_idx, delay in enumerate(RETRY_DELAYS):
                     logger.warning(
-                        "[Pass1Batch] Batch %d/%d failed after retry, falling back for %d MUST_KNOW articles",
-                        batch_idx + 1, len(batches), must_know_count
+                        '[Pass1Batch] Batch %d/%d failed (%s), retry %d/%d in %.1fs...',
+                        batch_idx + 1, len(batches), exc, retry_idx + 1, len(RETRY_DELAYS), delay
                     )
-                    for aid, article in batch_with_ids:
-                        if self._is_must_know(article):
-                            try:
-                                pass1_result = await self.run_pass1(article)
-                                results.append(pass1_result)
-                            except Exception as ind_exc:
-                                logger.error("[Pass1Batch] Individual fallback failed for %s: %s", article.get("title"), ind_exc)
-                    continue
+                    await asyncio.sleep(delay)
+                    try:
+                        resp_a = await call_batch(pass_a_payload)
+                        if not resp_a.success:
+                            raise RuntimeError(f"Pass A retry failed: {resp_a.error_message}")
+                        resp_b = await call_batch(pass_b_payload)
+                        if not resp_b.success:
+                            raise RuntimeError(f"Pass B retry failed: {resp_b.error_message}")
+                        succeeded = True
+                        break
+                    except Exception as retry_exc:
+                        exc = retry_exc  # update exc for next log
+                        if retry_idx == len(RETRY_DELAYS) - 1:
+                            # All retries exhausted — MUST_KNOW fallback
+                            must_know_count = sum(1 for _, a in batch_with_ids if self._is_must_know(a))
+                            logger.warning(
+                                '[Pass1Batch] Batch %d/%d failed after %d retries, falling back for %d MUST_KNOW articles',
+                                batch_idx + 1, len(batches), len(RETRY_DELAYS), must_know_count
+                            )
+                            for aid, article in batch_with_ids:
+                                if self._is_must_know(article):
+                                    try:
+                                        pass1_result = await self.run_pass1(article)
+                                        results.append(pass1_result)
+                                    except Exception as ind_exc:
+                                        logger.error('[Pass1Batch] Individual fallback failed for %s: %s', article.get('title'), ind_exc)
+                            continue
+                if not succeeded:
+                    continue  # batch already handled above via fallback
 
             # Build score maps from LLM responses
             # resp_a.data = {"articles": [{"article_id": ..., "upsc_relevance": int, ...}]}
