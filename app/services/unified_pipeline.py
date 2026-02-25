@@ -131,6 +131,14 @@ def _triage_to_importance(triage: str) -> str:
     return mapping.get(triage, "low")
 
 
+def _to_iso_str(value: Any) -> str:
+    """Convert a datetime object or ISO string to an ISO string; fallback to empty string."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return ""
+
 def prepare_knowledge_card_for_database(article: dict[str, Any]) -> dict[str, Any]:
     """Map enriched article dict to DB row with all 5-layer fields populated."""
     syllabus_matches = article.get("syllabus_matches") or []
@@ -142,7 +150,7 @@ def prepare_knowledge_card_for_database(article: dict[str, Any]) -> dict[str, An
         "content": article.get("content", ""),
         "source_url": article.get("url", ""),
         "source_site": article.get("source_site", ""),
-        "published_at": article.get("published_date", "") or datetime.now(timezone.utc).isoformat(),
+        "published_at": _to_iso_str(article.get("published_date")) or datetime.now(timezone.utc).isoformat(),
         "date": _parse_date(article.get("published_date")),
         "status": "published",
         # Analysis fields
