@@ -157,6 +157,7 @@ def prepare_knowledge_card_for_database(article: dict[str, Any]) -> dict[str, An
         "context_layer": article.get("context_layer", ""),
         "connections_layer": article.get("connections_layer") or {},
         "mains_angle_layer": article.get("mains_angle_layer", ""),
+        "practice_questions_layer": article.get("practice_questions_layer") or [],
         "priority_triage": article.get("priority_triage", "good_to_know"),
         "syllabus_topic": syllabus_topic,
         # Deduplication

@@ -667,6 +667,10 @@ LAYER 3 – CONTEXT & ANALYSIS (context_layer):
 LAYER 4 – MAINS ANGLE (mains_angle_layer):
   1–2 sentences framing this topic as a Mains answer.
   Suggest the GS paper and a likely question direction.
+
+LAYER 5 – PRACTICE QUESTIONS (practice_questions):
+  Exactly 3 UPSC practice questions. Mix types: one Prelims MCQ, one Mains Short Answer, one Mains Essay or Case Study.
+  Each must have: title (the question text), type, gsPaper, difficulty, marks, topic (syllabus topic), explanation (brief answer hint), keywords (array of strings).
 """
 
         knowledge_card_schema = {
@@ -680,19 +684,39 @@ LAYER 4 – MAINS ANGLE (mains_angle_layer):
                 },
                 "context_layer": {"type": "string"},
                 "mains_angle_layer": {"type": "string"},
+                "practice_questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title":       {"type": "string"},
+                            "type":        {"type": "string", "enum": ["Prelims MCQ", "Mains Short Answer", "Mains Essay", "Case Study"]},
+                            "gsPaper":     {"type": "string", "enum": ["GS1", "GS2", "GS3", "GS4", "Prelims"]},
+                            "difficulty":  {"type": "string", "enum": ["Easy", "Medium", "Hard"]},
+                            "marks":       {"type": "integer"},
+                            "topic":       {"type": "string"},
+                            "explanation": {"type": "string"},
+                            "keywords":    {"type": "array", "items": {"type": "string"}}
+                        },
+                        "required": ["title", "type", "gsPaper", "difficulty", "marks", "topic", "keywords"]
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                },
             },
             "required": [
                 "headline_layer",
                 "facts_layer",
                 "context_layer",
                 "mains_angle_layer",
+                "practice_questions",
             ],
         }
 
         knowledge_card_response_format = {
             "type": "json",
             "name": "knowledge_card",
-            "description": "4-layer UPSC knowledge card for current affairs article",
+            "description": "5-layer UPSC knowledge card for current affairs article",
             "schema": knowledge_card_schema,
         }
 

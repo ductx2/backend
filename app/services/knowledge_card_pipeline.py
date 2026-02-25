@@ -335,6 +335,7 @@ class KnowledgeCardPipeline:
             "context_layer": card_data.get("context_layer", ""),
             "connections_layer": connections_layer,
             "mains_angle_layer": card_data.get("mains_angle_layer", ""),
+            "practice_questions_layer": card_data.get("practice_questions", []),
         }
 
     # ------------------------------------------------------------------
