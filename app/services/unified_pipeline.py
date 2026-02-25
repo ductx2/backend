@@ -344,9 +344,14 @@ class UnifiedPipeline:
         pipeline = KnowledgeCardPipeline()
         pass1_results = await pipeline.run_pass1_batch(articles_with_content)
 
-        # Merge pass1 results back into article dicts (same order as input)
+        # Merge pass1 results back into article dicts (keyed by URL)
         scored_articles: list[dict[str, Any]] = []
-        for article, pass1 in zip(articles_with_content, pass1_results):
+        for article in articles_with_content:
+            url = article.get('url', article.get('source_url', ''))
+            pass1 = pass1_results.get(url)
+            if pass1 is None:
+                logger.warning('[Pipeline] No pass1 result for article: %s', article.get('title', 'unknown'))
+                continue
             merged = {**article}
             merged.update({
                 'upsc_relevance': pass1['upsc_relevance'],
@@ -357,6 +362,12 @@ class UnifiedPipeline:
                 'raw_pass1_data': pass1['raw_pass1_data'],
             })
             scored_articles.append(merged)
+        if len(scored_articles) < len(articles_with_content):
+            lost = len(articles_with_content) - len(scored_articles)
+            logger.warning(
+                '[Pipeline] %d articles lost during pass1 scoring (%d in, %d out)',
+                lost, len(articles_with_content), len(scored_articles)
+            )
 
         # Step 5: Relevance threshold filter + MUST_KNOW bypass
         threshold = pipeline.relevance_threshold  # 55 from config

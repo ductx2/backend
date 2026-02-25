@@ -595,8 +595,8 @@ class TestRun:
             mock_kcp._is_must_know = MagicMock(return_value=False)
             mock_kcp._compute_triage = MagicMock(return_value="good_to_know")
             mock_kcp.run_pass1_batch = AsyncMock(
-                side_effect=lambda arts: [
-                    {
+                side_effect=lambda arts: {
+                    a.get('url', a.get('source_url', '')): {
                         "upsc_relevance": 72,
                         "gs_paper": "GS2",
                         "key_facts": ["fact1"],
@@ -604,8 +604,8 @@ class TestRun:
                         "syllabus_matches": [],
                         "raw_pass1_data": {},
                     }
-                    for _ in arts
-                ]
+                    for a in arts
+                }
             )
             mock_kcp.run_pass2 = AsyncMock(
                 return_value={
@@ -1222,8 +1222,8 @@ class TestRunSaveToDb:
             mock_kcp._is_must_know = MagicMock(return_value=False)
             mock_kcp._compute_triage = MagicMock(return_value="must_know")
             mock_kcp.run_pass1_batch = AsyncMock(
-                side_effect=lambda arts: [
-                    {
+                side_effect=lambda arts: {
+                    a.get('url', a.get('source_url', '')): {
                         "upsc_relevance": 85,
                         "gs_paper": "GS3",
                         "key_facts": ["fiscal deficit target", "capital expenditure"],
@@ -1238,8 +1238,8 @@ class TestRunSaveToDb:
                         ],
                         "raw_pass1_data": {},
                     }
-                    for _ in arts
-                ]
+                    for a in arts
+                }
             )
             mock_kcp.run_pass2 = AsyncMock(
                 return_value={

@@ -106,15 +106,14 @@ class KnowledgeCardPipeline:
     # Pass 1 Batch — Batch scoring via UPSC_BATCH_ANALYSIS
     # ------------------------------------------------------------------
 
-    async def run_pass1_batch(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def run_pass1_batch(self, articles: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Batch-score multiple articles via UPSC_BATCH_ANALYSIS (10 per call, 2 shuffled passes).
-        
-        Returns list of dicts with SAME shape as run_pass1() for each article.
+        Returns dict keyed by article URL, values have SAME shape as run_pass1() for each article.
         MUST_KNOW articles that fail batch scoring fall back to individual run_pass1().
         Non-MUST_KNOW articles that fail batch scoring are skipped.
         """
         BATCH_SIZE = 10
-        results: list[dict[str, Any]] = []
+        results: dict[str, dict[str, Any]] = {}  # keyed by article URL
         batches = [articles[i:i+BATCH_SIZE] for i in range(0, len(articles), BATCH_SIZE)]
 
         # Helper to build payload JSON
@@ -200,9 +199,16 @@ class KnowledgeCardPipeline:
                                 if self._is_must_know(article):
                                     try:
                                         pass1_result = await self.run_pass1(article)
-                                        results.append(pass1_result)
+                                        url = article.get('url', article.get('source_url', ''))
+                                        results[url] = pass1_result
                                     except Exception as ind_exc:
                                         logger.error('[Pass1Batch] Individual fallback failed for %s: %s', article.get('title'), ind_exc)
+                            dropped_count = len(batch_with_ids) - must_know_count
+                            if dropped_count > 0:
+                                logger.warning(
+                                    '[Pass1Batch] Dropped %d non-MUST_KNOW articles from failed batch %d/%d',
+                                    dropped_count, batch_idx + 1, len(batches)
+                                )
                             continue
                 if not succeeded:
                     continue  # batch already handled above via fallback
@@ -251,14 +257,15 @@ class KnowledgeCardPipeline:
                     keywords=key_topics,
                 )
 
-                results.append({
+                url = article.get('url', article.get('source_url', ''))
+                results[url] = {
                     "upsc_relevance": averaged_score,
                     "gs_paper": relevant_papers[0] if relevant_papers else "GS2",
                     "key_facts": key_topics,
                     "keywords": key_topics,
                     "syllabus_matches": syllabus_matches,
                     "raw_pass1_data": primary_data,
-                })
+                }
 
         return results
 

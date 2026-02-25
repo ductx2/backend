@@ -115,13 +115,19 @@ def _patch_pipeline_internals(
         # Default: one pass1 result per raw article that has content
         n = sum(1 for a in raw_articles if a.get("content"))
         pass1_results = [_make_pass1_result() for _ in range(n)]
-
     if pass2_result is None:
         pass2_result = _make_pass2_result()
+    # Convert list of pass1 results to a side_effect returning dict keyed by URL
+    _default_pass1 = _make_pass1_result()
 
+    def _pass1_side_effect(articles):
+        return {
+            a.get('url', a.get('source_url', '')): _default_pass1
+            for a in articles
+        }
     # Mock KnowledgeCardPipeline
     mock_kcp = MagicMock()
-    mock_kcp.run_pass1_batch = AsyncMock(return_value=pass1_results)
+    mock_kcp.run_pass1_batch = AsyncMock(side_effect=_pass1_side_effect)
     mock_kcp.run_pass2 = AsyncMock(return_value=pass2_result)
     mock_kcp.relevance_threshold = 55
     mock_kcp._is_must_know = MagicMock(return_value=True)  # all pass threshold
@@ -365,7 +371,7 @@ class TestIntegrationDbStorage:
 
         # Make run_pass2 raise so 0 articles are enriched
         mock_kcp = MagicMock()
-        mock_kcp.run_pass1_batch = AsyncMock(return_value=[_make_pass1_result()])
+        mock_kcp.run_pass1_batch = AsyncMock(side_effect=lambda arts: {a.get('url', a.get('source_url', '')): _make_pass1_result() for a in arts})
         mock_kcp.run_pass2 = AsyncMock(side_effect=Exception("Pass2 failure"))
         mock_kcp.relevance_threshold = 55
         mock_kcp._is_must_know = MagicMock(return_value=True)

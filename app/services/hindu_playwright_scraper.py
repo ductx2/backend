@@ -116,6 +116,14 @@ class HinduPlaywrightScraper:
                     "[HinduScraper] No title found for %s, skipping", article_url
                 )
                 return None
+            # Normalize title: collapse whitespace/newlines to single space
+            title = ' '.join(title.split())
+            # Filter Premium articles (The Hindu marks subscriber-only content)
+            if 'premium' in title.lower():
+                logger.debug(
+                    "[HinduScraper] Filtered premium title: %s", article_url
+                )
+                return None
 
             author = await self._get_text(
                 page, ".author-name, .person-name, .auth-nm a, .auth-nm"

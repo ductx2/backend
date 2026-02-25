@@ -159,14 +159,25 @@ MOCK_PYQ_FORMATTED = {
 def _build_pipeline_patches(
     raw_articles, pass1_results=None, pass2_result=None, selected_articles=None
 ):
-    """Build mock objects for KnowledgeCardPipeline + ArticleSelector."""
+    """Build mock objects for KnowledgeCardPipeline + ArticleSelector.
+    
+    pass1_results is a list of dicts (one per article); we convert to a
+    side_effect that returns a dict keyed by article URL.
+    """
     if pass1_results is None:
         pass1_results = [_make_pass1_result() for _ in raw_articles]
     if pass2_result is None:
         pass2_result = _make_pass2_result()
+    # Convert list of pass1 results to a side_effect returning dict keyed by URL
+    _default_pass1 = _make_pass1_result()
 
+    def _pass1_side_effect(articles):
+        return {
+            a.get('url', a.get('source_url', '')): _default_pass1
+            for a in articles
+        }
     mock_kcp = MagicMock()
-    mock_kcp.run_pass1_batch = AsyncMock(return_value=pass1_results)
+    mock_kcp.run_pass1_batch = AsyncMock(side_effect=_pass1_side_effect)
     mock_kcp.run_pass2 = AsyncMock(return_value=pass2_result)
     mock_kcp.relevance_threshold = 55
     mock_kcp._is_must_know = MagicMock(return_value=True)
