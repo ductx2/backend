@@ -649,7 +649,7 @@ Your task is to create a high-quality knowledge card for a current affairs artic
 
 {request.custom_instructions or ""}
 
-Generate a 4-layer knowledge card optimised for UPSC Civil Services (Prelims + Mains):
+Generate a 5-layer knowledge card optimised for UPSC Civil Services (Prelims + Mains):
 
 LAYER 1 – HEADLINE (headline_layer):
   A single, punchy sentence (≤15 words) that captures the exam-relevant essence.

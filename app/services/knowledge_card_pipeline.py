@@ -424,6 +424,7 @@ class KnowledgeCardPipeline:
             "context_layer": pass2["context_layer"],
             "connections_layer": pass2["connections_layer"],
             "mains_angle_layer": pass2["mains_angle_layer"],
+            "practice_questions_layer": pass2["practice_questions_layer"],
         })
 
         logger.info(
