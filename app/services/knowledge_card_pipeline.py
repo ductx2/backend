@@ -2,7 +2,7 @@
 KnowledgeCardPipeline — two-pass LLM enrichment engine.
 
 Pass 1: UPSC_ANALYSIS LLM + SyllabusService for relevance scoring, fact extraction, syllabus matching.
-Pass 2: PYQService + KNOWLEDGE_CARD LLM for full 5-layer knowledge card generation.
+Pass 2: KNOWLEDGE_CARD LLM for full 5-layer knowledge card generation.
 
 No database writes here — that's T14.
 """
@@ -18,7 +18,7 @@ from typing import Any, Optional
 from app.models.llm_schemas import LLMRequest, TaskType, ProviderPreference
 from app.services.centralized_llm_service import llm_service
 from app.services.syllabus_service import SyllabusService
-from app.services.pyq_service import PYQService
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class KnowledgeCardPipeline:
 
     def __init__(self) -> None:
         self.syllabus_service = SyllabusService()
-        self.pyq_service = PYQService()
+
         self.relevance_threshold = settings.relevance_threshold
 
     # ------------------------------------------------------------------
@@ -276,7 +276,7 @@ class KnowledgeCardPipeline:
     async def run_pass2(
         self, article: dict[str, Any], pass1_result: dict[str, Any]
     ) -> dict[str, Any]:
-        """Run Pass 2: PYQ lookup + KNOWLEDGE_CARD LLM.
+        """Run Pass 2: KNOWLEDGE_CARD LLM.
 
         Returns dict with 5-layer knowledge card:
             headline_layer, facts_layer, context_layer,
@@ -286,14 +286,6 @@ class KnowledgeCardPipeline:
         gs_paper = pass1_result.get("gs_paper", "GS2")
         syllabus_matches = pass1_result.get("syllabus_matches", [])
         raw_data = pass1_result.get("raw_pass1_data", {})
-
-        # PYQ lookup
-        related_pyqs = self.pyq_service.find_related_pyqs(
-            keywords=keywords,
-            topics=keywords,
-            gs_paper=gs_paper,
-        )
-        pyq_formatted = self.pyq_service.format_for_knowledge_card(related_pyqs)
 
         # Build context for LLM
         title = article.get("title", "")
@@ -305,20 +297,11 @@ class KnowledgeCardPipeline:
             for m in syllabus_matches[:5]
         ) or "No syllabus matches"
 
-        pyq_context = ""
-        for pyq in pyq_formatted.get("related_pyqs", [])[:3]:
-            pyq_context += (
-                f"- [{pyq.get('year', '')} {pyq.get('exam_type', '')}] "
-                f"{pyq.get('question_summary', '')}\n"
-            )
-        pyq_context = pyq_context.strip() or "No related PYQs found"
-
         custom_instructions = (
             f"Article title: {title}\n"
             f"GS Paper: {gs_paper}\n"
             f"Key topics: {', '.join(keywords)}\n"
             f"Summary: {summary}\n"
-            f"\nPYQ Context:\n{pyq_context}\n"
             f"\nSyllabus Context:\n{syllabus_context}"
         )
 
@@ -344,9 +327,6 @@ class KnowledgeCardPipeline:
         # Build connections_layer (the 5th layer, assembled here not by LLM)
         connections_layer: dict[str, Any] = {
             "syllabus_topics": syllabus_matches,
-            "related_pyqs": pyq_formatted.get("related_pyqs", []),
-            "pyq_count": pyq_formatted.get("pyq_count", 0),
-            "year_range": pyq_formatted.get("year_range", ""),
         }
 
         return {
