@@ -799,7 +799,7 @@ For each article, return:
 - importance_level: Low / Medium / High / Critical
 - question_potential: Low / Medium / High
 - category: politics / economy / international / science / environment / society / defence / schemes
-- summary: 1-2 sentence summary of the article's UPSC relevance
+- key_vocabulary: 3-5 key technical/policy terms from the article, each with a concise UPSC-relevant definition (term + definition fields)
 
 {request.custom_instructions or ""}"""
 
@@ -846,6 +846,18 @@ For each article, return:
                                 ],
                             },
                             "summary": {"type": "string"},
+                            "key_vocabulary": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "term": {"type": "string"},
+                                        "definition": {"type": "string"},
+                                    },
+                                    "required": ["term", "definition"],
+                                },
+                                "minItems": 3,
+                            },
                         },
                         "required": [
                             "article_id",
@@ -856,6 +868,7 @@ For each article, return:
                             "question_potential",
                             "category",
                             "summary",
+                            "key_vocabulary",
                         ],
                     },
                 }

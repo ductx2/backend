@@ -3,35 +3,22 @@ Automation API Endpoints
 Master Plan Implementation - Phase 4.1
 
 Implements automation endpoints as specified in FASTAPI_IMPLEMENTATION_MASTER_PLAN.md:
-- POST /api/automation/daily - Runs complete 5-step pipeline
+- POST /api/automation/daily - Runs complete unified pipeline (Hindu Playwright + RSS + AI enrichment)
 - GET /api/automation/status
 
 Compatible with: FastAPI 0.116.1, Python 3.13.5
 Created: 2025-08-30
-Updated: 2026-01-31 - Switched to direct complete_pipeline call for proper structured output
+Updated: 2026-02-26 - Wired to UnifiedPipeline (replaces simplified_flow RSS-only pipeline)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import logging
 from datetime import datetime
 
 # Local imports
 from ..core.security import require_authentication, require_admin_access
 from ..core.database import get_database, SupabaseConnection
-from ..core.config import get_settings
-
-# Import complete_pipeline function directly
-from .simplified_flow import (
-    step1_extract_rss,
-    step2_analyze_relevance,
-    step3_extract_content,
-    step4_refine_content,
-    step5_save_to_database,
-    AnalysisRequest,
-    RefinementRequest,
-    SaveRequest,
-)
 
 # Initialize router and logger
 router = APIRouter(prefix="/api/automation", tags=["Automation"])
@@ -45,14 +32,16 @@ async def execute_daily_automation(
     db: SupabaseConnection = Depends(get_database),
 ):
     """
-    🎯 MASTER PLAN ENDPOINT: Execute daily automation
-
-    Runs the complete 5-step pipeline directly:
-    1. RSS extraction
-    2. UPSC relevance analysis (with structured LLM output)
+    Run the complete unified pipeline:
+    1. Fetch all sources (Hindu Playwright multi-section + RSS + PIB + ORF + MEA + IDSA)
+    2. Date filter (36h)
     3. Content extraction
-    4. AI refinement
-    5. Database save
+    4. Pass 1 batch scoring (relevance, GS paper, keywords)
+    5. Threshold filter (55) + MUST_KNOW bypass
+    6. ArticleSelector (semantic dedup + GS balance)
+    6.5. LLM content enhancement
+    7. Pass 2 knowledge card generation
+    8. Save to database
 
     Returns immediately and runs pipeline in background to prevent 502 timeout.
     """
@@ -66,14 +55,18 @@ async def execute_daily_automation(
         return {
             "success": True,
             "message": "Daily automation started in background. Check logs for progress.",
-            "pipeline": "complete-pipeline (5 steps)",
+            "pipeline": "unified-pipeline (Hindu Playwright + RSS + full AI enrichment)",
             "status": "processing",
             "steps": [
-                "1. RSS extraction",
-                "2. UPSC relevance analysis (structured LLM)",
+                "1. Fetch all sources (Hindu Playwright + RSS + PIB + ORF + MEA + IDSA)",
+                "2. Date filter (36h)",
                 "3. Content extraction",
-                "4. AI refinement",
-                "5. Database save",
+                "4. Pass 1 batch scoring",
+                "5. Relevance threshold filter (55)",
+                "6. ArticleSelector",
+                "6.5. LLM content enhancement",
+                "7. Pass 2 knowledge cards",
+                "8. Save to database",
             ],
             "monitoring": {
                 "check_logs": "Render logs will show progress",
@@ -92,90 +85,35 @@ async def execute_daily_automation(
 
 async def _run_complete_pipeline_background(user: dict, db: SupabaseConnection):
     """
-    Background task that runs the complete 5-step pipeline.
-
-    This directly calls the pipeline functions for proper structured LLM output:
-    - key_vocabulary (technical terms with definitions)
-    - category (politics, economy, science, etc.)
-    - gs_paper (GS1, GS2, GS3, GS4)
-    - upsc_relevance (varied scores based on content)
+    Background task: runs UnifiedPipeline end-to-end and saves results to DB.
+    Produces ~25-30 fully enriched UPSC knowledge cards per run.
     """
     try:
-        logger.info("📊 Background pipeline started - 5-step complete-pipeline")
+        from app.services.unified_pipeline import UnifiedPipeline
+        logger.info("🚀 UnifiedPipeline started (Hindu Playwright + RSS + AI enrichment)")
         start_time = datetime.utcnow()
 
-        # Step 1: Extract RSS
-        logger.info("📰 Step 1: Extracting RSS feeds...")
-        step1_response = await step1_extract_rss(user)
-        articles = step1_response["data"]["articles"]
-        logger.info(f"   ✅ Extracted {len(articles)} articles from RSS feeds")
-
-        if not articles:
-            logger.warning("❌ No articles extracted from RSS feeds")
-            return
-
-        # Step 2: Analyze relevance (this is where structured LLM output happens)
-        logger.info("🔍 Step 2: Analyzing UPSC relevance with structured LLM...")
-        analysis_request = AnalysisRequest(articles=articles)
-        step2_response = await step2_analyze_relevance(analysis_request, user)
-        relevant_articles = step2_response["data"]["relevant_articles"]
-        logger.info(f"   ✅ Found {len(relevant_articles)} UPSC-relevant articles")
-
-        if not relevant_articles:
-            logger.warning("❌ No articles passed UPSC relevance filter")
-            return
-
-        # Step 3: Extract content (from top 30 relevant articles)
-        logger.info("📄 Step 3: Extracting full content...")
-        top_articles = relevant_articles[:30]  # Limit for performance (raised from 20 to match 25-30 daily target)
-        extraction_request_data = {
-            "selected_articles": [
-                {"title": a["title"], "url": a.get("source_url", a.get("url", ""))}
-                for a in top_articles
-            ]
-        }
-        step3_response = await step3_extract_content(extraction_request_data, user)
-        extracted_articles = step3_response["data"]["extracted_articles"]
-        logger.info(f"   ✅ Extracted content from {len(extracted_articles)} articles")
-
-        if not extracted_articles:
-            logger.warning("❌ No articles had extractable content")
-            return
-
-        # Step 4: Refine content
-        logger.info("✨ Step 4: Refining content with AI...")
-        refinement_request = RefinementRequest(articles=extracted_articles)
-        step4_response = await step4_refine_content(refinement_request, user)
-        refined_articles = step4_response["data"]["refined_articles"]
-        logger.info(f"   ✅ Refined {len(refined_articles)} articles")
-
-        if not refined_articles:
-            logger.warning("❌ No articles were successfully refined")
-            return
-
-        # Step 5: Save to database
-        logger.info("💾 Step 5: Saving to database...")
-        save_request = SaveRequest(processed_articles=refined_articles)
-        step5_response = await step5_save_to_database(save_request, user, db)
-        saved_count = step5_response["data"]["saved_articles"]
-        duplicates = step5_response["data"]["duplicates_skipped"]
-        logger.info(f"   ✅ Saved {saved_count} articles, skipped {duplicates} duplicates")
+        pipeline = UnifiedPipeline()
+        result = await pipeline.run(max_articles=30, save_to_db=True)
 
         processing_time = (datetime.utcnow() - start_time).total_seconds()
+        saved = result.get("db_save", {}).get("saved", 0)
+        errors = result.get("db_save", {}).get("errors", 0)
 
         logger.info(
-            f"🎉 Complete pipeline finished: {saved_count} articles saved in {processing_time:.2f}s"
+            "🎉 UnifiedPipeline complete in %.2fs: fetched=%d enriched=%d saved=%d errors=%d",
+            processing_time,
+            result.get("total_fetched", 0),
+            result.get("total_enriched", 0),
+            saved,
+            errors,
         )
-        logger.info(
-            f"   📊 Pipeline stats: {len(articles)} RSS → {len(relevant_articles)} relevant → "
-            f"{len(extracted_articles)} extracted → {len(refined_articles)} refined → {saved_count} saved"
-        )
+        logger.info("   GS distribution: %s", result.get("gs_distribution", {}))
 
     except Exception as e:
-        logger.error(f"❌ Background pipeline failed: {e}")
+        logger.error("❌ UnifiedPipeline background task failed: %s", e)
         import traceback
         logger.error(traceback.format_exc())
-
 
 @router.get("/status", response_model=Dict[str, Any])
 async def get_automation_status(
@@ -193,17 +131,15 @@ async def get_automation_status(
             "success": True,
             "message": "Automation system status retrieved",
             "system_status": {
-                "pipeline": "complete-pipeline (5 steps)",
-                "llm_output": "structured (key_vocabulary, category, gs_paper)",
+                "pipeline": "unified-pipeline (Hindu Playwright + RSS + full AI enrichment)",
+                "sources": [
+                    "The Hindu (Playwright, 6 sections: editorial, national, international, economy, sci_tech, environment)",
+                    "RSS feeds (LiveLaw, PIB)",
+                    "ORF, MEA, IDSA (httpx scrapers)",
+                ],
+                "enrichment": "Pass 1 scoring → ArticleSelector → LLM enhancement → Pass 2 knowledge cards",
                 "automation_ready": True,
             },
-            "pipeline_steps": [
-                "1. RSS extraction (6 premium sources)",
-                "2. UPSC relevance analysis (structured LLM)",
-                "3. Content extraction (full article)",
-                "4. AI refinement (summaries, key points)",
-                "5. Database save (deduplication)",
-            ],
             "timestamp": datetime.utcnow().isoformat(),
         }
 

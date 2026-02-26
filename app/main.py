@@ -29,7 +29,7 @@ from app.core.middleware import configure_middleware
 from app.core.database import get_database, SupabaseConnection
 
 # Import API routers
-from app.api import current_affairs, automation, simplified_flow
+from app.api import current_affairs, automation, simplified_flow, admin
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -213,6 +213,7 @@ async def general_exception_handler(request, exc):
 app.include_router(simplified_flow.router)
 app.include_router(current_affairs.router)
 app.include_router(automation.router)
+app.include_router(admin.router)
 
 
 # 🎯 Clean, focused API - No legacy aliases needed
