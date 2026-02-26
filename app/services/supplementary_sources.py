@@ -23,66 +23,22 @@ _HEADERS = {
 
 class SupplementarySources:
     SOURCES: list[dict[str, str]] = [
-        # Disabled: PRS RSS returns 404 as of Feb 2026
-        # {
-        #     "source_site": "prs",
-        #     "name": "PRS Legislative Research",
-        #     "url": "https://www.prsindia.org/parliamenttrack/rss",
-        #     "section": "legislature",
-        # },
-        # Economy — RBI
-        {
-            "source_site": "rbi",
-            "name": "RBI Press Releases",
-            "url": "https://rbi.org.in/pressreleases_rss.xml",
-            "section": "economy",
-        },
-        {
-            "source_site": "rbi",
-            "name": "RBI Notifications",
-            "url": "https://rbi.org.in/notifications_rss.xml",
-            "section": "economy",
-        },
-        {
-            "source_site": "rbi",
-            "name": "RBI Speeches",
-            "url": "https://rbi.org.in/speeches_rss.xml",
-            "section": "economy",
-        },
-        {
-            "source_site": "rbi",
-            "name": "RBI Publications",
-            "url": "https://rbi.org.in/Publication_rss.xml",
-            "section": "economy",
-        },
-        # GS-II Polity — Supreme Court, High Courts, legal analysis
+        # GS-II Polity — SC/HC judgments, Constitutional bench cases
+        # Hindu covers major SC cases; Bar & Bench covers full legal spectrum
         {
             "source_site": "barandbench",
             "name": "Bar & Bench",
             "url": "https://www.barandbench.com/stories.rss",
             "section": "polity",
         },
-        # GS-II Polity — SC/HC judgments, legal news
         {
             "source_site": "livelaw",
             "name": "LiveLaw",
             "url": "https://www.livelaw.in/category/top-stories/google_feeds.xml",
             "section": "polity",
         },
-        # GS-II/III Policy + GS-II International Relations
-        {
-            "source_site": "niti",
-            "name": "NITI Aayog",
-            "url": "https://niti.gov.in/rss.xml",
-            "section": "policy",
-        },
-        {
-            "source_site": "gatewayhouse",
-            "name": "Gateway House",
-            "url": "https://www.gatewayhouse.in/feed",
-            "section": "international_relations",
-        },
-        # GS-II Policy — Government press releases (PIB)
+        # GS-II/III Policy — Government press releases (PIB)
+        # Essential: scheme launches, policy updates, awards — UPSC setters use PIB directly
         {
             "source_site": "pib",
             "name": "PIB English National",
