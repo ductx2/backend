@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 COOKIE_MAX_AGE_DAYS = 14
 
-HINDU_LOGIN_URL = "https://www.thehindu.com/login/"
+HINDU_LOGIN_URL = "https://www.thehindu.com/myaccount/"
 HINDU_CHECK_URL = "https://www.thehindu.com/opinion/editorial/"
 IE_LOGIN_URL = "https://indianexpress.com/login/"
 IE_CHECK_URL = "https://indianexpress.com/section/opinion/editorials/"
@@ -227,17 +227,34 @@ class PlaywrightSessionManager:
             self._contexts["hindu"] = context
             page = await context.new_page()
 
-            await page.goto(HINDU_LOGIN_URL, wait_until="networkidle")
-            await self._random_delay()
+            await page.goto(HINDU_LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
+            await asyncio.sleep(5)  # wait for Piano iframe to load
 
-            await page.fill('input[type="email"], input[name="email"], #email', email)
-            await page.fill(
-                'input[type="password"], input[name="password"], #password',
-                password,
-            )
-            await page.click('button[type="submit"], input[type="submit"]')
-            await page.wait_for_load_state("networkidle")
-            await self._random_delay()
+            # Login form is inside the Piano/TinyPass SSO iframe
+            piano_frame = None
+            for frame in page.frames:
+                if "tinypass.com" in frame.url or "piano" in frame.url.lower():
+                    piano_frame = frame
+                    break
+
+            if piano_frame is None:
+                raise RuntimeError("Piano SSO iframe not found on Hindu login page")
+
+            logger.info("[PlaywrightSession] Found Piano iframe, filling email")
+            await piano_frame.fill('input[type="text"]', email)
+
+            # Click NEXT (btn-primary) to reveal password field (two-step Piano flow)
+            await piano_frame.click('button.btn-primary')
+            await asyncio.sleep(3)  # wait for password field to animate in
+
+            # Now fill password (it becomes visible after email step)
+            logger.info("[PlaywrightSession] Filling password")
+            await piano_frame.wait_for_selector('input[type="password"]:visible', timeout=15000)
+            await piano_frame.fill('input[type="password"]', password)
+
+            # Click LOGIN button (also btn-primary after password step)
+            await piano_frame.click('button.btn-primary')
+            await asyncio.sleep(5)  # wait for redirect after login
 
             # Capture storage state and persist to Supabase
             state = await context.storage_state()
