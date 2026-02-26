@@ -26,7 +26,7 @@ def _hindu_articles():
     return [
         {
             "title": "Hindu Article 1",
-            "content": "Full body text from RSS feed.",
+            "content": "<p>Full body text from RSS feed.</p>",
             "source": "The Hindu - Editorial",
             "source_url": "https://thehindu.com/editorial/article1",
             "url": "https://thehindu.com/editorial/article1",
@@ -36,7 +36,7 @@ def _hindu_articles():
         },
         {
             "title": "Hindu Article 2",
-            "content": "Another body.",
+            "content": "<p>Another body.</p>",
             "source": "The Hindu - Op-Ed",
             "source_url": "https://thehindu.com/oped/article2",
             "url": "https://thehindu.com/oped/article2",
@@ -91,7 +91,7 @@ def _hindu_pw_articles():
         {
             "title": "Hindu PW Article 1",
             "url": "https://thehindu.com/pw/editorial1",
-            "content": "Playwright-scraped Hindu editorial.",
+            "content": "<p>Playwright-scraped Hindu editorial.</p>",
             "published_date": _RECENT_DATE_STR,
             "author": "PW Author",
             "section": "editorial",
@@ -106,7 +106,7 @@ def _ie_pw_articles():
         {
             "title": "IE PW Article 1",
             "url": "https://indianexpress.com/pw/explained1",
-            "content": "Playwright-scraped IE editorial.",
+            "content": "<p>Playwright-scraped IE editorial.</p>",
             "published_date": _RECENT_DATE_STR,
             "author": "IE PW Author",
             "section": "explained",
@@ -120,7 +120,7 @@ def _mea_articles():
     return [
         {
             "title": "MEA Press Release 1",
-            "content": "MEA press release content.",
+            "content": "<p>MEA press release content.</p>",
             "source_url": "https://mea.gov.in/press-release1",
             "source_site": "mea",
             "section": "press-releases",
@@ -134,7 +134,7 @@ def _orf_articles():
     return [
         {
             "title": "ORF Expert Speak 1",
-            "content": "ORF expert analysis content.",
+            "content": "<p>ORF expert analysis content.</p>",
             "source_url": "https://orfonline.org/expert-speak/1",
             "source_site": "orf",
             "section": "expert-speak",
@@ -148,7 +148,7 @@ def _idsa_articles():
     return [
         {
             "title": "IDSA Comment 1",
-            "content": "IDSA strategic analysis.",
+            "content": "<p>IDSA strategic analysis.</p>",
             "source_url": "https://idsa.in/comment/1",
             "source_site": "idsa",
             "section": "comments-briefs",
@@ -619,6 +619,7 @@ class TestRun:
                         "year_range": "",
                     },
                     "mains_angle_layer": "Test mains angle",
+                    "practice_questions_layer": [],
                 }
             )
             mock_kcp_cls.return_value = mock_kcp
@@ -634,7 +635,7 @@ class TestRun:
             mock_ext = MagicMock()
             extracted = MagicMock()
             extracted.content = "Extracted content from URL."
-            mock_ext.extract_content = MagicMock(return_value=extracted)
+            mock_ext.extract_content = AsyncMock(return_value=extracted)
             mock_ext_cls.return_value = mock_ext
 
             self.mock_rss = mock_rss
@@ -742,6 +743,7 @@ class TestRun:
                     "year_range": "",
                 },
                 "mains_angle_layer": "Test mains angle",
+                "practice_questions_layer": [],
             }
 
         self.mock_kcp.run_pass2 = AsyncMock(side_effect=pass2_side_effect)
@@ -1009,6 +1011,7 @@ def _enriched_knowledge_card_article():
         # Pass 1
         "upsc_relevance": 85,
         "gs_paper": "GS3",
+        "category": "gs3",
         "key_facts": ["fiscal deficit target", "capital expenditure"],
         "keywords": ["budget", "fiscal policy"],
         "syllabus_matches": [
@@ -1255,6 +1258,7 @@ class TestRunSaveToDb:
                         "year_range": "2023-2023",
                     },
                     "mains_angle_layer": "Analyze the fiscal consolidation strategy.",
+                    "practice_questions_layer": [],
                 }
             )
             mock_kcp_cls.return_value = mock_kcp

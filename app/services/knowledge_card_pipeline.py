@@ -96,6 +96,7 @@ class KnowledgeCardPipeline:
         return {
             "upsc_relevance": data.get("upsc_relevance", 0),
             "gs_paper": gs_paper,
+            "category": data.get("category", ""),
             "key_facts": key_topics,
             "keywords": key_topics,
             "syllabus_matches": syllabus_matches,
@@ -261,6 +262,7 @@ class KnowledgeCardPipeline:
                 results[url] = {
                     "upsc_relevance": averaged_score,
                     "gs_paper": relevant_papers[0] if relevant_papers else "GS2",
+                    "category": primary_data.get("category", ""),
                     "key_facts": key_topics,
                     "keywords": key_topics,
                     "syllabus_matches": syllabus_matches,

@@ -47,6 +47,8 @@ readability-lxml>=0.8.1
 # Additional HTTP client features
 requests-html>=0.10.0
 
+# HTML sanitization for content extraction
+bleach>=6.1.0
 # Semantic deduplication (TF-IDF cosine similarity for cross-source dedup)
 scikit-learn>=1.6.0
 

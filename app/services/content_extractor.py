@@ -33,6 +33,7 @@ import requests
 from bs4 import BeautifulSoup, Tag
 import trafilatura
 from readability import Document
+import bleach
 
 # Local imports
 from ..core.config import get_settings
@@ -114,6 +115,33 @@ class UniversalContentExtractor:
         
         logger.info("🚀 Universal Content Extractor initialized with multi-strategy approach")
     
+    # Allowed HTML tags and attributes for sanitized content
+    ALLOWED_TAGS = [
+        'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'ul', 'ol', 'li', 'blockquote',
+        'strong', 'em', 'b', 'i',
+        'a', 'br',
+        'table', 'thead', 'tbody', 'tr', 'td', 'th',
+    ]
+    ALLOWED_ATTRIBUTES = {
+        'a': ['href', 'title'],
+    }
+
+    def _sanitize_html(self, html: str) -> str:
+        """
+        Sanitize HTML content using bleach.
+        Strips dangerous tags (script, style, iframe, form) and event handlers
+        (onclick, onload, etc.) while preserving semantic HTML structure.
+        """
+        if not html:
+            return html
+        return bleach.clean(
+            html,
+            tags=self.ALLOWED_TAGS,
+            attributes=self.ALLOWED_ATTRIBUTES,
+            strip=True,
+        )
+
     async def extract_content(self, url: str, strategy: str = "auto") -> Optional[ExtractedContent]:
         """
         Extract content from URL using specified or automatic strategy selection
@@ -213,19 +241,22 @@ class UniversalContentExtractor:
             author = authors[0] if authors else ""
             
             # Generate summary if not available
+            # Wrap plain text paragraphs in <p> tags and sanitize
+            html_content = ''.join(f'<p>{p.strip()}</p>' for p in article.text.split('\n\n') if p.strip())
+            html_content = self._sanitize_html(html_content)
             summary = article.summary or self._generate_summary(article.text)
-            
+
             return ExtractedContent(
                 url=url,
                 title=article.title or "",
-                content=article.text,
+                content=html_content,
                 summary=summary,
                 author=author,
                 publish_date=publish_date,
                 tags=tags,
                 category=self._classify_content_category(article.text),
                 language=article.meta_lang or "en",
-                content_quality_score=self._calculate_quality_score(article.text, article.title),
+                content_quality_score=self._calculate_quality_score(html_content, article.title),
                 extraction_method="newspaper3k",
                 metadata={
                     "meta_description": article.meta_description or "",
@@ -267,10 +298,12 @@ class UniversalContentExtractor:
             # Extract content with trafilatura
             content = trafilatura.extract(
                 response.text,
+                output_format='html',
                 include_comments=False,
                 include_tables=True,
                 include_links=False,
-                include_images=False
+                include_images=False,
+                include_formatting=True
             )
             
             if not content:
@@ -294,6 +327,9 @@ class UniversalContentExtractor:
             elif not publish_date:
                 publish_date = datetime.now(timezone.utc)
             
+            # Sanitize HTML content
+            content = self._sanitize_html(content)
+
             return ExtractedContent(
                 url=url,
                 title=title,
@@ -393,22 +429,17 @@ class UniversalContentExtractor:
             # Extract content with readability
             doc = Document(response.text)
             title = doc.title()
-            content = doc.summary()
-            
-            if not title or not content:
+            content_html = doc.summary()
+
+            if not title or not content_html:
                 return None
-            
-            # Clean HTML from content
-            content_soup = BeautifulSoup(content, 'html.parser')
-            clean_content = content_soup.get_text(separator='\n', strip=True)
-            
-            # Clean up content
-            clean_content = re.sub(r'\n\s*\n', '\n\n', clean_content)
-            clean_content = re.sub(r'\s+', ' ', clean_content)
-            
+
+            # Sanitize the HTML (readability already returns clean semantic HTML)
+            clean_content = self._sanitize_html(content_html)
+
             if len(clean_content.strip()) < self.min_content_length:
                 return None
-            
+
             return ExtractedContent(
                 url=url,
                 title=title,
@@ -463,10 +494,10 @@ class UniversalContentExtractor:
                 for unwanted in element.find_all(['script', 'style', 'nav', 'aside', '.advertisement', '.ad']):
                     unwanted.decompose()
                 
-                content = element.get_text(separator='\n', strip=True)
-                content = re.sub(r'\n\s*\n', '\n\n', content)
-                content = re.sub(r'\s+', ' ', content)
-                
+                # Return inner HTML instead of stripping to plain text
+                content = element.decode_contents()
+                content = self._sanitize_html(content)
+
                 if len(content.strip()) >= self.min_content_length:
                     return content.strip()
         
@@ -563,11 +594,15 @@ class UniversalContentExtractor:
         elif len(title) >= 10:
             score += 0.1
         
-        # Content structure score (0.3 weight)
-        paragraphs = content.split('\n\n')
-        if len(paragraphs) >= 3:
+        # Content structure score (0.3 weight) — handle HTML and plain text
+        if '<p>' in content:
+            paragraph_count = content.count('<p>')
+        else:
+            paragraph_count = len(content.split('\n\n'))
+
+        if paragraph_count >= 3:
             score += 0.3
-        elif len(paragraphs) >= 2:
+        elif paragraph_count >= 2:
             score += 0.2
         else:
             score += 0.1

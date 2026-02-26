@@ -677,7 +677,14 @@ async def run_cron_pipeline(
     authorization: str | None = Header(default=None),
 ):
     expected = settings.cron_secret
-    if not expected or not authorization or authorization != f"Bearer {expected}":
+    if not expected:
+        logger.error("CRON auth failed: CRON_SECRET not loaded in settings (value is None/empty)")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if not authorization:
+        logger.error("CRON auth failed: No Authorization header received")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if authorization != f"Bearer {expected}":
+        logger.error("CRON auth failed: Token mismatch (expected_len=%d, got_len=%d)", len(expected), len(authorization))
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     if _pipeline_lock.locked():
