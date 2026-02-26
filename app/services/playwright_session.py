@@ -1,8 +1,10 @@
 import asyncio
+import json
 import logging
 import os
 import random
 import time
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
 from playwright.async_api import BrowserContext, Page, async_playwright
@@ -21,6 +23,10 @@ IE_CHECK_URL = "https://indianexpress.com/section/opinion/editorials/"
 LOGIN_INDICATORS = ("login", "signin", "sign-in", "sign_in", "authenticate")
 
 
+def _cookie_config_key(site: str) -> str:
+    return f"playwright_cookies_{site}"
+
+
 class PlaywrightSessionManager:
     USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -29,19 +35,119 @@ class PlaywrightSessionManager:
     )
     VIEWPORT = {"width": 1920, "height": 1080}
 
-    def __init__(self, cookie_dir: str = "/data/cookies/") -> None:
-        self.cookie_dir = cookie_dir
+    def __init__(self) -> None:
+        # No cookie_dir — cookies are stored in Supabase system_config table.
         self._playwright = None
         self._browser = None
         self._contexts: Dict[str, BrowserContext] = {}
+        # In-memory cache of storage-state dicts keyed by site to avoid
+        # repeated DB reads within the same pipeline run.
+        self._cookie_cache: Dict[str, Optional[dict]] = {}
 
-    def _cookie_path(self, site: str) -> str:
-        return os.path.join(self.cookie_dir, f"{site}.json")
+    # ------------------------------------------------------------------
+    # Supabase cookie persistence
+    # ------------------------------------------------------------------
+
+    def _get_supabase_client(self):
+        """Lazy import to avoid circular imports at module load time."""
+        from app.core.database import SupabaseConnection
+
+        return SupabaseConnection().client
+
+    async def _load_cookies_from_supabase(self, site: str) -> Optional[dict]:
+        """Return storage-state dict for site, or None if absent/expired."""
+        if site in self._cookie_cache:
+            return self._cookie_cache[site]
+
+        try:
+            client = self._get_supabase_client()
+            key = _cookie_config_key(site)
+            result = await asyncio.to_thread(
+                lambda: client.table("system_config")
+                .select("value")
+                .eq("key", key)
+                .maybe_single()
+                .execute()
+            )
+            row = result.data if result else None
+            if not row or not row.get("value"):
+                logger.info("[PlaywrightSession] No cookies in Supabase for %s", site)
+                self._cookie_cache[site] = None
+                return None
+
+            stored = row["value"]
+            saved_at_str = stored.get("saved_at")
+            if saved_at_str:
+                saved_at = datetime.fromisoformat(saved_at_str)
+                age_days = (
+                    datetime.now(timezone.utc) - saved_at
+                ).total_seconds() / 86400
+                if age_days > COOKIE_MAX_AGE_DAYS:
+                    logger.info(
+                        "[PlaywrightSession] Cookies for %s are %.1f days old (max %d), treating as expired",
+                        site,
+                        age_days,
+                        COOKIE_MAX_AGE_DAYS,
+                    )
+                    self._cookie_cache[site] = None
+                    return None
+
+            # stored["state"] is the raw Playwright storage-state dict
+            state = stored.get("state")
+            logger.info("[PlaywrightSession] Loaded cookies from Supabase for %s", site)
+            self._cookie_cache[site] = state
+            return state
+
+        except Exception as e:
+            logger.error(
+                "[PlaywrightSession] Failed to load cookies from Supabase for %s: %s",
+                site,
+                e,
+            )
+            self._cookie_cache[site] = None
+            return None
+
+    async def _save_cookies_to_supabase(self, site: str, state: dict) -> None:
+        """Persist Playwright storage-state dict to Supabase system_config."""
+        try:
+            client = self._get_supabase_client()
+            key = _cookie_config_key(site)
+            value = {
+                "state": state,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await asyncio.to_thread(
+                lambda: client.table("system_config")
+                .upsert(
+                    {
+                        "key": key,
+                        "value": value,
+                        "value_type": "json",
+                        "category": "pipeline",
+                        "description": f"Playwright session cookies for {site}",
+                        "is_sensitive": True,
+                    },
+                    on_conflict="key",
+                )
+                .execute()
+            )
+            # Update in-memory cache
+            self._cookie_cache[site] = state
+            logger.info("[PlaywrightSession] Saved cookies to Supabase for %s", site)
+        except Exception as e:
+            logger.error(
+                "[PlaywrightSession] Failed to save cookies to Supabase for %s: %s",
+                site,
+                e,
+            )
+
+    # ------------------------------------------------------------------
+    # Browser lifecycle
+    # ------------------------------------------------------------------
 
     async def _ensure_browser(self) -> None:
         if self._browser is not None:
             return
-
         pw = await async_playwright().start()
         self._playwright = pw
         self._browser = await pw.chromium.launch(headless=True)
@@ -62,18 +168,42 @@ class PlaywrightSessionManager:
             "viewport": self.VIEWPORT,
         }
 
-        cookie_path = self._cookie_path(site)
-        if os.path.exists(cookie_path):
-            kwargs["storage_state"] = cookie_path
-            logger.info("[PlaywrightSession] Loading cookies from %s", cookie_path)
+        # Load cookies from Supabase (if available)
+        state = await self._load_cookies_from_supabase(site)
+        if state:
+            # Write to a temp file — Playwright requires a file path for storage_state
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tmp:
+                json.dump(state, tmp)
+                tmp_path = tmp.name
+            kwargs["storage_state"] = tmp_path
+            logger.info(
+                "[PlaywrightSession] Applied Supabase cookies for %s via temp file",
+                site,
+            )
 
         context = await self._browser.new_context(**kwargs)
         self._contexts[site] = context
+
+        # Clean up temp file after context is created
+        if state and "storage_state" in kwargs:
+            try:
+                os.unlink(kwargs["storage_state"])
+            except OSError:
+                pass
+
         return context
 
     async def get_page(self, site: str) -> Page:
         context = await self.get_context(site)
         return await context.new_page()
+
+    # ------------------------------------------------------------------
+    # Login helpers
+    # ------------------------------------------------------------------
 
     async def login_hindu(self, email: str, password: str) -> None:
         if not email or not email.strip():
@@ -84,11 +214,17 @@ class PlaywrightSessionManager:
         logger.info("[PlaywrightSession] Starting Hindu login for %s", email)
 
         try:
+            # Fresh context — drop any existing one
             if "hindu" in self._contexts:
                 await self._contexts["hindu"].close()
                 del self._contexts["hindu"]
+            self._cookie_cache.pop("hindu", None)
 
-            context = await self.get_context("hindu")
+            await self._ensure_browser()
+            context = await self._browser.new_context(
+                user_agent=self.USER_AGENT, viewport=self.VIEWPORT
+            )
+            self._contexts["hindu"] = context
             page = await context.new_page()
 
             await page.goto(HINDU_LOGIN_URL, wait_until="networkidle")
@@ -100,14 +236,12 @@ class PlaywrightSessionManager:
                 password,
             )
             await page.click('button[type="submit"], input[type="submit"]')
-
             await page.wait_for_load_state("networkidle")
             await self._random_delay()
 
-            cookie_path = self._cookie_path("hindu")
-            os.makedirs(os.path.dirname(cookie_path), exist_ok=True)
-            await context.storage_state(path=cookie_path)
-            logger.info("[PlaywrightSession] Hindu cookies saved to %s", cookie_path)
+            # Capture storage state and persist to Supabase
+            state = await context.storage_state()
+            await self._save_cookies_to_supabase("hindu", state)
 
             await page.close()
 
@@ -129,8 +263,13 @@ class PlaywrightSessionManager:
             if "ie" in self._contexts:
                 await self._contexts["ie"].close()
                 del self._contexts["ie"]
+            self._cookie_cache.pop("ie", None)
 
-            context = await self.get_context("ie")
+            await self._ensure_browser()
+            context = await self._browser.new_context(
+                user_agent=self.USER_AGENT, viewport=self.VIEWPORT
+            )
+            self._contexts["ie"] = context
             page = await context.new_page()
 
             await page.goto(IE_LOGIN_URL, wait_until="networkidle")
@@ -142,14 +281,11 @@ class PlaywrightSessionManager:
                 password,
             )
             await page.click('button[type="submit"], input[type="submit"]')
-
             await page.wait_for_load_state("networkidle")
             await self._random_delay()
 
-            cookie_path = self._cookie_path("ie")
-            os.makedirs(os.path.dirname(cookie_path), exist_ok=True)
-            await context.storage_state(path=cookie_path)
-            logger.info("[PlaywrightSession] IE cookies saved to %s", cookie_path)
+            state = await context.storage_state()
+            await self._save_cookies_to_supabase("ie", state)
 
             await page.close()
 
@@ -159,10 +295,14 @@ class PlaywrightSessionManager:
             logger.error("[PlaywrightSession] IE login failed: %s", str(e))
             raise
 
+    # ------------------------------------------------------------------
+    # Session validation / refresh
+    # ------------------------------------------------------------------
+
     async def is_session_valid(self, site: str) -> bool:
-        cookie_path = self._cookie_path(site)
-        if not os.path.exists(cookie_path):
-            logger.info("[PlaywrightSession] No cookie file for %s", site)
+        state = await self._load_cookies_from_supabase(site)
+        if not state:
+            logger.info("[PlaywrightSession] No cookies in Supabase for %s", site)
             return False
 
         try:
@@ -177,7 +317,6 @@ class PlaywrightSessionManager:
             is_login_page = any(
                 indicator in current_url for indicator in LOGIN_INDICATORS
             )
-
             await page.close()
 
             if is_login_page:
@@ -192,33 +331,20 @@ class PlaywrightSessionManager:
 
         except Exception as e:
             logger.error(
-                "[PlaywrightSession] Session validation failed for %s: %s",
-                site,
-                str(e),
+                "[PlaywrightSession] Session validation failed for %s: %s", site, str(e)
             )
             return False
 
     async def refresh_if_needed(self, site: str) -> None:
-        cookie_path = self._cookie_path(site)
-        needs_refresh = False
-
-        if not os.path.exists(cookie_path):
-            logger.info("[PlaywrightSession] No cookies for %s, refresh needed", site)
-            needs_refresh = True
-        else:
-            file_age_seconds = time.time() - os.path.getmtime(cookie_path)
-            file_age_days = file_age_seconds / (24 * 60 * 60)
-            if file_age_days > COOKIE_MAX_AGE_DAYS:
-                logger.info(
-                    "[PlaywrightSession] Cookies for %s are %.1f days old (max %d), refresh needed",
-                    site,
-                    file_age_days,
-                    COOKIE_MAX_AGE_DAYS,
-                )
-                needs_refresh = True
-
-        if not needs_refresh:
+        state = await self._load_cookies_from_supabase(site)
+        if state is not None:
+            # Cookies exist and are not expired (age check done inside _load_cookies)
+            logger.info(
+                "[PlaywrightSession] Cookies for %s are fresh, no refresh needed", site
+            )
             return
+
+        logger.info("[PlaywrightSession] No valid cookies for %s, refresh needed", site)
 
         if site == "hindu":
             email = settings.HINDU_EMAIL
@@ -244,6 +370,10 @@ class PlaywrightSessionManager:
 
         logger.info("[PlaywrightSession] Refreshed session for %s", site)
 
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+
     async def close(self) -> None:
         for site, context in list(self._contexts.items()):
             try:
@@ -254,6 +384,7 @@ class PlaywrightSessionManager:
                 )
 
         self._contexts = {}
+        self._cookie_cache = {}
 
         if self._browser:
             try:

@@ -29,6 +29,9 @@ httpx>=0.28.0
 beautifulsoup4>=4.12.3
 lxml>=5.3.0
 
+# Playwright for The Hindu subscription-based scraping (cookies stored in Supabase)
+playwright>=1.49.0
+
 # ENHANCED DRISHTI IAS SCRAPING DEPENDENCIES - CHROME-FREE ARCHITECTURE
 # REMOVED: selenium>=4.26.1 (Chrome-free architecture implemented)
 # REMOVED: webdriver-manager>=4.0.2 (No longer needed)
