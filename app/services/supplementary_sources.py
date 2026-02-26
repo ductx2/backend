@@ -24,13 +24,7 @@ _HEADERS = {
 class SupplementarySources:
     SOURCES: list[dict[str, str]] = [
         # GS-II Polity — SC/HC judgments, Constitutional bench cases
-        # Hindu covers major SC cases; Bar & Bench covers full legal spectrum
-        {
-            "source_site": "barandbench",
-            "name": "Bar & Bench",
-            "url": "https://www.barandbench.com/stories.rss",
-            "section": "polity",
-        },
+        # Focused purely on Supreme Court & High Court orders (not legal industry noise)
         {
             "source_site": "livelaw",
             "name": "LiveLaw",
@@ -60,10 +54,6 @@ class SupplementarySources:
             logger.debug(
                 "[SupplementarySources] Filtered premium title: %s", title[:50]
             )
-            return None
-        # Filter out Dealstreet entries (business law, not UPSC-relevant)
-        tags = getattr(entry, "tags", []) or []
-        if any("dealstreet" in (tag.get("term", "") or "").lower() for tag in tags):
             return None
 
         url = getattr(entry, "link", "").strip()
