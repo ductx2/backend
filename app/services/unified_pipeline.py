@@ -18,6 +18,8 @@ from app.services.content_extractor import UniversalContentExtractor
 from app.services.knowledge_card_pipeline import KnowledgeCardPipeline
 from app.services.article_selector import ArticleSelector
 from app.core.database import SupabaseConnection
+from app.models.llm_schemas import LLMRequest, TaskType
+from app.services.centralized_llm_service import llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +152,7 @@ def prepare_knowledge_card_for_database(article: dict[str, Any]) -> dict[str, An
         "content": article.get("content", ""),
         "source_url": article.get("url", ""),
         "source_site": article.get("source_site", ""),
+        "source": article.get("source_site", ""),
         "published_at": _to_iso_str(article.get("published_date")) or datetime.now(timezone.utc).isoformat(),
         "date": _parse_date(article.get("published_date")),
         "status": "published",
@@ -157,7 +160,7 @@ def prepare_knowledge_card_for_database(article: dict[str, Any]) -> dict[str, An
         "upsc_relevance": article.get("upsc_relevance", 0),
         "gs_paper": article.get("gs_paper", ""),
         "tags": article.get("keywords") or [],
-        "category": (article.get("gs_paper") or "general").lower(),
+        "category": article.get("category") or "general",
         "importance": _triage_to_importance(article.get("priority_triage", "good_to_know")),
         # 5-layer knowledge card fields
         "headline_layer": article.get("headline_layer", ""),
@@ -169,6 +172,8 @@ def prepare_knowledge_card_for_database(article: dict[str, Any]) -> dict[str, An
         "priority_triage": article.get("priority_triage", "good_to_know"),
         "syllabus_topic": syllabus_topic,
         # Deduplication
+        "summary": article.get("summary") or article.get("extracted_summary", ""),
+        "key_vocabulary": article.get("key_vocabulary") or [],
         "content_hash": hashlib.md5(article.get("content", "").encode()).hexdigest(),
     }
 
@@ -332,7 +337,8 @@ class UnifiedPipeline:
         extractor = UniversalContentExtractor()
         articles_with_content: list[dict[str, Any]] = []
         for article in date_filtered:
-            if article.get('content'):
+            article['rss_snippet'] = article.get('content', '')
+            if article.get('content') and '<p>' in article.get('content', ''):
                 articles_with_content.append(article)
                 continue
             url = article.get('url', '')
@@ -343,12 +349,17 @@ class UnifiedPipeline:
                 extracted = await extractor.extract_content(url)
                 if extracted is None or not extracted.content:
                     logger.warning("Content extraction returned empty for '%s'", article.get('title', 'unknown'))
+                    if article.get('rss_snippet'):
+                        articles_with_content.append(article)
                     continue
                 article['content'] = extracted.content
+                article['extracted_summary'] = extracted.summary or ''
                 articles_with_content.append(article)
             except Exception as e:
                 logger.error("Content extraction failed for '%s': %s", article.get('title', 'unknown'), e)
-
+                if article.get('rss_snippet'):
+                    article['content'] = article['rss_snippet']
+                    articles_with_content.append(article)
         # Step 4: Batch scoring via run_pass1_batch() (NEW)
         pipeline = KnowledgeCardPipeline()
         pass1_results = await pipeline.run_pass1_batch(articles_with_content)
@@ -365,10 +376,13 @@ class UnifiedPipeline:
             merged.update({
                 'upsc_relevance': pass1['upsc_relevance'],
                 'gs_paper': pass1['gs_paper'],
+                'category': pass1.get('category', ''),
                 'key_facts': pass1['key_facts'],
                 'keywords': pass1['keywords'],
                 'syllabus_matches': pass1['syllabus_matches'],
                 'raw_pass1_data': pass1['raw_pass1_data'],
+                'summary': pass1.get('raw_pass1_data', {}).get('summary', ''),
+                'key_vocabulary': pass1.get('raw_pass1_data', {}).get('key_vocabulary', []),
             })
             scored_articles.append(merged)
         if len(scored_articles) < len(articles_with_content):
@@ -396,6 +410,40 @@ class UnifiedPipeline:
         selector = ArticleSelector()
         selected = await selector.select_top_articles(above_threshold, target=max_articles)
         logger.info("Selected %d articles for Pass 2", len(selected))
+
+        # Step 6.5: LLM Content Enhancement (ALL selected articles)
+        logger.info("Step 6.5: Enhancing %d selected articles with LLM...", len(selected))
+        enhanced_count = 0
+        for i, article in enumerate(selected):
+            try:
+                original_title = article.get('title', 'Untitled')
+                request = LLMRequest(
+                    task_type=TaskType.CONTENT_ENHANCEMENT,
+                    content=article.get('content', '') or article.get('summary', ''),
+                    max_tokens=4096,
+                    temperature=0.2,
+                )
+                response = await llm_service.process_request(request)
+                if response.success and response.data:
+                    article['title'] = response.data.get('enhanced_title', article.get('title', ''))
+                    article['content'] = response.data.get('enhanced_content', article.get('content', ''))
+                    article['summary'] = response.data.get('brief_summary', article.get('summary', ''))
+                    enhanced_count += 1
+                    logger.info(
+                        "[%d/%d] Enhanced: '%s' → '%s'",
+                        i + 1, len(selected), original_title[:50], article['title'][:50]
+                    )
+                else:
+                    logger.warning(
+                        "[%d/%d] Enhancement returned no data for '%s', keeping original",
+                        i + 1, len(selected), original_title[:50]
+                    )
+            except Exception as e:
+                logger.warning(
+                    "[%d/%d] Enhancement failed for '%s': %s — keeping original content",
+                    i + 1, len(selected), article.get('title', 'Untitled')[:50], e
+                )
+        logger.info("Step 6.5 complete: Enhanced %d/%d articles", enhanced_count, len(selected))
 
         # Step 7: Pass 2 knowledge card generation on final selected articles ONLY
         enriched: list[dict[str, Any]] = []

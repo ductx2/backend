@@ -188,6 +188,19 @@ class CentralizedLLMService:
                     "exam_tip",
                 ],
             },
+            "content_enhancement": {
+                "type": "object",
+                "properties": {
+                    "enhanced_title": {"type": "string"},
+                    "enhanced_content": {"type": "string"},
+                    "brief_summary": {"type": "string"},
+                },
+                "required": [
+                    "enhanced_title",
+                    "enhanced_content",
+                    "brief_summary",
+                ],
+            },
         }
 
     async def initialize_router(self):
@@ -332,6 +345,7 @@ class CentralizedLLMService:
             TaskType.DEDUPLICATION: self._handle_deduplication,
             TaskType.KNOWLEDGE_CARD: self._handle_knowledge_card,
             TaskType.UPSC_BATCH_ANALYSIS: self._handle_upsc_batch_analysis,
+            TaskType.CONTENT_ENHANCEMENT: self._handle_content_enhancement,
         }
 
     def _get_preferred_model(self, preference: ProviderPreference) -> str:
@@ -1074,6 +1088,125 @@ Title requirements:
             "data": {},
         }
 
+
+    def _validate_content_enhancement_response(self, data: dict) -> tuple[bool, str]:
+        """Validate that content enhancement response contains actual content, not schema definitions."""
+        required_fields = ["enhanced_title", "enhanced_content", "brief_summary"]
+        for field in required_fields:
+            if field not in data:
+                return False, f"Missing required field: {field}"
+
+        title = str(data.get("enhanced_title", ""))
+        content = str(data.get("enhanced_content", ""))
+        summary = str(data.get("brief_summary", ""))
+
+        # Detect schema-like responses
+        schema_patterns = ['"type":"string"', '"type": "string"', '{"type"']
+        for pattern in schema_patterns:
+            if pattern in title or title.strip().startswith("{"):
+                return False, f"enhanced_title contains schema definition: {title[:100]}"
+            if pattern in summary or summary.strip().startswith("{"):
+                return False, f"brief_summary contains schema definition: {summary[:100]}"
+
+        if len(title.strip()) < 10:
+            return False, f"enhanced_title too short: {len(title)} chars"
+        if len(content.strip()) < 50:
+            return False, f"enhanced_content too short: {len(content)} chars"
+        if len(summary.strip()) < 20:
+            return False, f"brief_summary too short: {len(summary)} chars"
+
+        # Validate content has HTML structure (inline key-term spans expected)
+        if "<" not in content and ">" not in content:
+            logger.warning("enhanced_content has no HTML tags - may be malformed")
+
+        return True, ""
+
+    async def _handle_content_enhancement(
+        self, request: LLMRequest, model: str
+    ) -> Dict[str, Any]:
+        """Handle content enhancement: better title, structured HTML with inline key-term highlights, brief summary."""
+
+        prompt = f"""You are an expert UPSC content editor. Your job is to transform raw news articles into clear, well-structured, exam-ready content for UPSC Civil Services aspirants.
+
+ORIGINAL ARTICLE CONTENT:
+{request.content}
+
+YOUR TASK: Produce THREE outputs in JSON format:
+
+1. "enhanced_title" (50-100 characters):
+   - A clear, specific, informative title that gives UPSC aspirants immediate context
+   - Focus on the key development, policy, or issue — not vague clickbait
+   - Include the most important entity (person, institution, policy name) when relevant
+   - Example: "RBI Cuts Repo Rate by 25bps to 6.25% — Impact on Inflation" instead of "Central Bank Makes Policy Change"
+
+2. "enhanced_content" (300-800 words of HTML):
+   - Use semantic HTML: <h2> for main title, <h3> for subsections, <p> for paragraphs, <ul>/<li> for lists
+   - Simplify complex language for students while preserving factual accuracy
+   - CRITICAL: Identify 3-8 important terms, acronyms, or concepts in the article and wrap them with:
+     <span class="key-term" data-definition="[clear 1-2 sentence definition/explanation including UPSC relevance]">TERM</span>
+   - Examples of key-term usage:
+     <span class="key-term" data-definition="Reserve Bank of India — India's central banking institution responsible for monetary policy, currency regulation, and financial stability (GS3: Economy)">RBI</span>
+     <span class="key-term" data-definition="The interest rate at which the central bank lends short-term funds to commercial banks. A cut makes borrowing cheaper. (GS3: Economy)">repo rate</span>
+   - Structure: Overview paragraph → Key Developments (bullet points) → Important Facts → UPSC Relevance → Way Forward
+   - Use <strong> for important names, dates, statistics, and policy names
+   - Reduce verbosity: cut redundant phrases, filler, and repetition while keeping all facts
+   - Every paragraph should add value — no fluff
+
+3. "brief_summary" (2-3 sentences):
+   - Concise overview capturing the who, what, why, and significance for UPSC
+   - Must stand alone as a quick-read summary
+
+IMPORTANT RULES:
+- Return ONLY valid JSON with keys: enhanced_title, enhanced_content, brief_summary
+- Do NOT invent facts — only use information from the source article
+- Do NOT include the title inside enhanced_content as an <h2> — the title is displayed separately
+- The key-term definitions should explain the term as if to a student who may not know it
+- Include GS paper references in key-term definitions where applicable (e.g., GS1: History, GS2: Polity, GS3: Economy, GS4: Ethics)
+
+{request.custom_instructions or ""}"""
+
+        try:
+            enhancement_response_format = {
+                "type": "json",
+                "name": "content_enhancement",
+                "description": "UPSC content enhancement with inline key-term highlights",
+                "schema": self.response_schemas["content_enhancement"],
+            }
+
+            response = await self._direct_completion(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=enhancement_response_format,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+
+            clean_json = strip_markdown_json(response.choices[0].message.content)
+            result_data = json.loads(clean_json)
+
+            is_valid, error_msg = self._validate_content_enhancement_response(result_data)
+            if not is_valid:
+                logger.error(
+                    f"[REJECTED] Content enhancement response failed validation: {error_msg}"
+                )
+                logger.error(f"[REJECTED] Raw response: {clean_json[:500]}")
+                raise ValueError(f"LLM returned invalid content: {error_msg}")
+
+            logger.info(
+                f"[OK] [ContentEnhancement] Validated response received from {response.model}"
+            )
+
+            return {
+                "provider_used": response.model,
+                "model_used": response.model,
+                "tokens_used": response.usage.total_tokens if response.usage else 0,
+                "estimated_cost": 0.0,
+                "data": result_data,
+            }
+
+        except Exception as e:
+            logger.error(f"Content enhancement failed: {e}")
+            raise
 
 # Global service instance
 llm_service = CentralizedLLMService()
