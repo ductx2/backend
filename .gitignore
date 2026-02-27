@@ -45,3 +45,4 @@ test_*.json
 .claude/settings.local.json
 # Playwright cookie persistence (login sessions)
 /data/cookies/
+*.png
